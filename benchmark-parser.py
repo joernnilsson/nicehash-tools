@@ -10,9 +10,9 @@ def getRate(rate, unit):
     elif(unit == "k"):
         mul = 1e3
     elif(unit == "M"):
-        mul = 10e6
+        mul = 1e6
     elif(unit == "G"):
-        mul = 10e9
+        mul = 1e9
     else:
         raise Exception("Unknown unit multiplier: "+unit)
     return rate * mul
