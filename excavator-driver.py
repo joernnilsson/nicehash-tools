@@ -26,7 +26,7 @@ import urllib.request
 from pprint import pprint
 from time import sleep
 
-WALLET_ADDR = '32RPicPbRK18S2fzY4cEwNUy17iygJyPjF'
+WALLET_ADDR = '3FkaDHat56SfuJaueRo9CCUM1rCGMK2coQ'
 WORKER_NAME = 'worker-01'
 REGION = 'eu' # eu, usa, hk, jp, in, br
 DEVICES = [1,2]
