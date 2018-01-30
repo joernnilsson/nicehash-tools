@@ -29,7 +29,7 @@ from time import sleep
 WALLET_ADDR = '3FkaDHat56SfuJaueRo9CCUM1rCGMK2coQ'
 WORKER_NAME = 'worker-01'
 REGION = 'eu' # eu, usa, hk, jp, in, br
-DEVICES = [1,2]
+DEVICES = [0,1,2]
 
 EXCAVATOR_ADDRESS = ('127.0.0.1', 3456)
 
@@ -237,6 +237,7 @@ def main():
         else:
             for device in BENCHMARKS.keys():
                 payrates = nicehash_mbtc_per_day(device, paying)
+                #pprint(payrates)
                 best_algo = max(payrates.keys(), key=lambda algo: payrates[algo])
 
                 if device not in worker_status:
