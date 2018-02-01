@@ -1,0 +1,26 @@
+{
+    "blake2s": 6772508000.0,
+    "cryptonight": 673.988265,
+    "daggerhashimoto": 30226965.0,
+    "daggerhashimoto_decred": [
+        29189516.0,
+        2054977000.0
+    ],
+    "daggerhashimoto_pascal": [
+        28658223.0,
+        802444013.0
+    ],
+    "daggerhashimoto_sia": [
+        27408973.0,
+        1559293000.0
+    ],
+    "decred": 4580376000.0,
+    "equihash": 698.331773,
+    "keccak": 1286608000.0,
+    "lbry": 445026308.0,
+    "lyra2rev2": 63760323.0,
+    "neoscrypt": 1487165.0,
+    "nist5": 75411408.0,
+    "pascal": 1720345000.0,
+    "sia": 2901248000.0
+}
