@@ -30,9 +30,8 @@ class Device:
         #print(proc.returncode)
 
     def set_clock_offset(self, offset):
-        #nvidia-settings -a '[gpu:0]/GPUPowerMizerMode=1'
-        #nvidia-settings -a '[gpu:0]/GPUGraphicsClockOffset[2]=50'
-        pass
+        proc = nvidia_settigns(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
+        proc = nvidia_settigns(["-a", '[gpu:0]/GPUGraphicsClockOffset[2]='+str(int(offset))])
 
     def get_clock_offset(self):
         offset = int(self.nvidia_settigns_get('GPUGraphicsClockOffset[2]'))
@@ -52,8 +51,7 @@ class Device:
         cmd = ["nvidia-settings"] + args
         self.logger.debug("Running: %s", cmd)
         proc = subprocess.run(cmd, stdout=subprocess.PIPE)
-        #print(proc.returncode)
-        #print(proc.stdout.decode("utf-8", errors='ignore'))
+        self.logger.debug("nvidia-settings: '%s'", proc.stdout.decode("utf-8", errors='ignore'))
 
         if(proc.returncode != 0):
             raise Exception("nvidia-settings exied with error %d" % (proc.returncode))
