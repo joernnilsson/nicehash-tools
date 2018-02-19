@@ -30,8 +30,8 @@ class Device:
         #print(proc.returncode)
 
     def set_clock_offset(self, offset):
-        proc = nvidia_settigns(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
-        proc = nvidia_settigns(["-a", '[gpu:0]/GPUGraphicsClockOffset[2]='+str(int(offset))])
+        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
+        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[2]='+str(int(offset))])
 
     def get_clock_offset(self):
         offset = int(self.nvidia_settigns_get('GPUGraphicsClockOffset[2]'))
@@ -41,20 +41,20 @@ class Device:
         return self.get("gpu/temperature/gpu_temp", tp = "C")
 
     def get_power_limit(self):
-        return self.get("gpu/power_readings/default_power_limit", tp = "W")
+        return self.get("gpu/power_readings/power_limit", tp = "W")
 
     def nvidia_settigns_get(self, var):
-        proc = self.nvidia_settigns(["-t", '-q', '[gpu:' + str(self.device_number) + ']/' + var])
+        proc = self.nvidia_settings(["-t", '-q', '[gpu:' + str(self.device_number) + ']/' + var])
         return proc.stdout.decode("utf-8", errors='ignore')
 
-    def nvidia_settigns(self, args):
+    def nvidia_settings(self, args):
         cmd = ["nvidia-settings"] + args
         self.logger.debug("Running: %s", cmd)
         proc = subprocess.run(cmd, stdout=subprocess.PIPE)
         self.logger.debug("nvidia-settings: '%s'", proc.stdout.decode("utf-8", errors='ignore'))
 
         if(proc.returncode != 0):
-            raise Exception("nvidia-settings exied with error %d" % (proc.returncode))
+            raise Exception("nvidia-settings exited with error %d" % (proc.returncode))
         
         return proc    
 
@@ -98,8 +98,8 @@ class Device:
         proc = self.nvidia_smi(["-q", "-x"])
         with open("out.xml", "w") as f:
             f.write(proc.stdout.decode("utf-8", errors='ignore') )
-        #Sreturn ET.fromstring(proc.stdout.decode("utf-8") )
-        return ET.parse("1080.xml")
+        return ET.fromstring(proc.stdout.decode("utf-8") )
+        #return ET.parse("1080.xml")
 
 
 

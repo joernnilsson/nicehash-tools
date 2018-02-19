@@ -13,13 +13,14 @@ def benchmark(executable, device, algo, benchmark_length):
     logger = logging.getLogger(__name__)
 
 
-    config = make_config(algo, benchmark_length)
+    config = make_config(algo, device, benchmark_length)
     json_data = json.dumps(config)
     fd, config_file = tempfile.mkstemp()
     logger.debug("Writing temp config to: %s", config_file)
     with os.fdopen(fd, 'w') as tmp:
         tmp.write(json_data)
 
+    print(["excavator", "-d", str(device), "-c", config_file])
     proc = subprocess.run(["excavator", "-d", str(device), "-c", config_file], stdout=subprocess.PIPE)
 
     m = re.search("total speed: ([0-9]*\.[0-9]+|[0-9]+)\s([a-zA-Z])?H/s", str(proc.stdout))
@@ -46,7 +47,7 @@ def get_rate(rate, unit):
         raise Exception("Unknown unit multiplier: "+unit)
     return rate * mul
 
-def make_config(algo, benchmark_length):
+def make_config(algo, device, benchmark_length):
 
     # Genearate config
     return [
@@ -72,7 +73,7 @@ def make_config(algo, benchmark_length):
                 "method": "worker.add",
                 "params": [
                 "0",
-                "0",
+                str(device),
                 "M=1"
                 ]
             }
