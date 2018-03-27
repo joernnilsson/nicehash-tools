@@ -48,10 +48,10 @@ def run_benchmark(task: Benchmark):
     dev = overclock.Device(task.device)
     dev.refresh()
 
-    if(task.clock):
+    if(task.clock != None):
         dev.set_clock_offset(task.clock)
 
-    if(task.power):
+    if(task.power != None):
         dev.set_power(task.power)
 
     task.result = excavator_benchmark.benchmark(task.executable, task.device, task.algo, task.benchmark_length)
@@ -115,8 +115,8 @@ if(__name__ == "__main__"):
 
     args = parser.parse_args()
 
-    clock_range = parse_range(args.clock_range) if args.clock_range else [None]
-    power_range = parse_range(args.power_range) if args.power_range else [None]
+    clock_range = parse_range(args.clock_range) if args.clock_range != None else [None]
+    power_range = parse_range(args.power_range) if args.power_range != None else [None]
 
     tasks = generate_tasks(args.excavator_path, args.device, args.algo, args.length, clock_range, power_range)
 

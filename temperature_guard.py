@@ -25,7 +25,10 @@ def get_temperature_nvidia():
         if(m):
             gpu = m.group(1)
             pwr = m.group(2)
-            temp = int(m.group(3))
+            if(m.group(3) == "-"):
+                temp = -100
+            else:
+                temp = int(m.group(3))
             if(temp > max_temp):
                 max_temp = temp
     if(max_temp == -100):

@@ -31,7 +31,7 @@ class Device:
 
     def set_clock_offset(self, offset):
         proc = self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
-        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[2]='+str(int(offset))])
+        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[3]='+str(int(offset))])
 
     def get_clock_offset(self):
         offset = int(self.nvidia_settigns_get('GPUGraphicsClockOffset[2]'))
@@ -128,7 +128,7 @@ if(__name__ == "__main__"):
     if(args.power):
         dev.set_power(args.power)
 
-    if(args.clock):
+    if(args.clock != None):
         dev.set_clock_offset(args.clock)
 
-    print(str(dev.get_clock_offset()))
+    #print(str(dev.get_clock_offset()))
