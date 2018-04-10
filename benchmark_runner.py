@@ -17,7 +17,7 @@ class Benchmark():
         self.benchmark_length = benchmark_length
         self.clock = clock
         self.power = power
-        self.result = None
+        self.result = []
 
         self.dev_power = None
         self.dev_clock = None
@@ -27,17 +27,37 @@ class Benchmark():
         return "Benchmark(algo: %s, length: %d, clock: %s, power: %s)" % (self.algo, self.benchmark_length, str(self.clock) or "None", str(self.power) or "None")
     
     def csv(self):
-        return ",".join([str(self.dev_power), str(self.dev_clock), str(self.dev_temp), str(self.result)])
+        return ",".join([str(self.dev_power), str(self.dev_clock), str(self.dev_temp), str(self.result[0])])
+
+algorithms = [
+    "equihash",
+    "pascal",
+    "decred",
+    "sia",
+    "lbry",
+    "blake2s",
+    "daggerhashimoto",
+    "lyra2rev2",
+    "daggerhashimoto_decred",
+    "daggerhashimoto_sia",
+    "daggerhashimoto_pascal",
+    "cryptonight",
+    "keccak",
+    "neoscrypt",
+    "nist5",
+    "cryptonightV7"
+    ]
 
 
-def generate_tasks(executable, device, algo, benchmark_length, clock_range, power_range):
+def generate_tasks(executable, device, algos, benchmark_length, clock_range, power_range):
 
     logger = logging.getLogger(__name__)
 
     tasks = []
-    for p in power_range:
-        for c in clock_range:
-            tasks.append(Benchmark(executable, device, algo, benchmark_length, c, p))
+    for a in algos:
+        for p in power_range:
+            for c in clock_range:
+                tasks.append(Benchmark(executable, device, a, benchmark_length, c, p))
     
     return tasks
 
@@ -57,8 +77,10 @@ def run_benchmark(task: Benchmark):
     task.result = excavator_benchmark.benchmark(task.executable, task.device, task.algo, task.benchmark_length)
     
     dev.refresh()
-    task.dev_clock = dev.get_clock_offset()
-    task.dev_power = dev.get_power_limit()
+    if(task.clock != None):
+        task.dev_clock = dev.get_clock_offset()
+    if(task.power != None):
+        task.dev_power = dev.get_power_limit()
     task.dev_temp = dev.get_temp()
 
 
@@ -89,11 +111,13 @@ def frange(x, y, jump):
         x += jump
     yield y
 
+def greater(a, b):
+    return res[0] > b[0]
 
 if(__name__ == "__main__"):
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s [%(filename)-20.20s:%(lineno)4d] [%(levelname)-5.5s] %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout)
@@ -103,7 +127,7 @@ if(__name__ == "__main__"):
     import argparse
     parser = argparse.ArgumentParser(description='Run a single excavator benchmark')
 
-    parser.add_argument("--algo", '-a', help='algorithm', required = True)
+    parser.add_argument("--algorithms", '-a', help='algorithms, comma separated (or "all")', required = True)
     parser.add_argument("--device", "-d", help='device number (default: 0)', default = 0, type=int)
     parser.add_argument("--length", '-l', help='length [s] (default: 100)', default = 100, type=int)
     parser.add_argument("--excavator-path", '-e', help='path to excavator executable (default: excavator)', default="excavator")
@@ -112,26 +136,40 @@ if(__name__ == "__main__"):
     parser.add_argument("--power-range", '-p', help='power limit value/range, example: [200:10:300]')
 
     parser.add_argument("--csv", '-s', help='output comma separated data file')
+    parser.add_argument("--json", '-j', help='output json file suitable for excavator driver')
 
     args = parser.parse_args()
 
     clock_range = parse_range(args.clock_range) if args.clock_range != None else [None]
     power_range = parse_range(args.power_range) if args.power_range != None else [None]
 
-    tasks = generate_tasks(args.excavator_path, args.device, args.algo, args.length, clock_range, power_range)
+    algos = algorithms if args.algorithms == "all" else args.algorithms.split(",")
+
+    tasks = generate_tasks(args.excavator_path, args.device, algos, args.length, clock_range, power_range)
 
     logger.info("Running %d bechmarks, with estimated total execution time: %.1f min", len(tasks), float(len(tasks) * (args.length+4))/ 60.0)
 
     output = ""
+    top = {}
     progress = 1
     for t in tasks:
         logger.info("Task   (%d/%d): %s", progress, len(tasks), str(t))
         run_benchmark(t)
-        logger.info("Result (%d/%d): %f H/s", progress, len(tasks), t.result)
+        logger.info("Result (%d/%d): %s H/s", progress, len(tasks), ", ".join(str(x) for x in t.result))
         output = output + t.csv() + "\n"
+
+        if(not t.algo in top or greater(top[t.algo], t.result)):
+            top[t.algo] = t.result[0] if len(t.result) == 1 else t.result
+            
         progress = progress + 1
         
     if(args.csv):
         with open(args.csv, "w") as f:
             f.write(output)
+
+    if(args.json):
+        with open(args.json, "w") as f:
+            out = json.dumps(top, indent=4, sort_keys=True, separators=(',', ': '))
+            logger.debug("Generated json: \n%s", out)
+            f.write(out)
 

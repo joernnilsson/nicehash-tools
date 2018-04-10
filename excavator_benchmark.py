@@ -14,28 +14,39 @@ def benchmark(executable, device, algo, benchmark_length):
 
 
     config = make_config(algo, device, benchmark_length)
-    json_data = json.dumps(config)
+    json_data = json.dumps(config, indent=4)
     fd, config_file = tempfile.mkstemp()
     logger.debug("Writing temp config to: %s", config_file)
     with os.fdopen(fd, 'w') as tmp:
         tmp.write(json_data)
 
-    print(["excavator", "-d", str(device), "-c", config_file])
-    proc = subprocess.run(["excavator", "-d", str(device), "-c", config_file], stdout=subprocess.PIPE)
+    #print(["excavator", "-d", str(device), "-c", config_file])
+    #print(json_data)
+    #proc = subprocess.run(["excavator", "-d", str(6), "-c", config_file])
+    #sys.exit(0)
+    proc = subprocess.run(["excavator", "-d", str(6), "-c", config_file], stdout=subprocess.PIPE)
 
-    m = re.search("total speed: ([0-9]*\.[0-9]+|[0-9]+)\s([a-zA-Z])?H/s", str(proc.stdout))
-    if(m == None):
+    # Handle dual algos
+    rates = []
+
+    ms = re.findall("speed: ([0-9]*\.[0-9]+|[0-9]+)\s([a-zA-Z])?H/s", str(proc.stdout))
+    for m in ms:
+        #print(proc.stdout.decode("utf-8", errors='ignore'))
+        rate = get_rate(float(m[0]), m[1])
+        rates.append(rate)
+
+    if(len(ms) == 0):
+        print(json_data)
+        print(proc.stdout.decode("utf-8", errors='ignore'))
         raise Exception("Could not extract hashrate from excavator output")
-    
-    rate = get_rate(float(m.group(1)), m.group(2))
 
     os.remove(config_file)
 
-    return rate
+    return rates
 
 
 def get_rate(rate, unit):
-    if(unit == None):
+    if(unit == None or len(unit) == 0):
         mul = 1
     elif(unit == "k"):
         mul = 1e3
@@ -44,26 +55,27 @@ def get_rate(rate, unit):
     elif(unit == "G"):
         mul = 1e9
     else:
-        raise Exception("Unknown unit multiplier: "+unit)
+        raise Exception("Unknown unit multiplier: '"+unit+"'")
     return rate * mul
 
 def make_config(algo, device, benchmark_length):
+
+    algo_commands = []
+    for a in algo.split("_"):
+        algo_commands.append({
+                "id": 1,
+                "method": "algorithm.add",
+                "params": [
+                a,
+                "benchmark"
+                ]
+            })
 
     # Genearate config
     return [
         {
             "time": 0,
-            "commands": [
-            {
-                "id": 1,
-                "method": "algorithm.add",
-                "params": [
-                algo,
-                "benchmark",
-                ""
-                ]
-            }
-            ]
+            "commands": algo_commands
         },
         {
             "time": 3,
@@ -72,9 +84,8 @@ def make_config(algo, device, benchmark_length):
                 "id": 1,
                 "method": "worker.add",
                 "params": [
-                "0",
-                str(device),
-                "M=1"
+                algo,
+                str(device)
                 ]
             }
             ]
@@ -123,5 +134,5 @@ if(__name__ == "__main__"):
 
 
     logger.info("Running %s benchmark for %d seconds", args.algo, args.length)
-    rate = benchmark(args.excavator_path, args.device, args.algo, args.length)
-    logger.info("Benchmark finished, %s rate: %f H/s", args.algo, rate)
+    rates = benchmark(args.excavator_path, args.device, args.algo, args.length)
+    logger.info("Benchmark finished, %s rate: [%s] H/s", args.algo, ", ".join(str(x) for x in rates))

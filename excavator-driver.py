@@ -106,7 +106,7 @@ def nicehash_mbtc_per_day(device, paying):
     """
 
     benchmarks = BENCHMARKS[device]
-    pay = lambda algo, speed: paying[algo]*speed*(24*60*60)*1e-11
+    pay = lambda algo, speed: paying[algo.lower()]*speed*(24*60*60)*1e-11
     def pay_benched(algo):
         if '_' in algo:
             return sum([pay(multi_algo, benchmarks[algo][i]) for
@@ -149,18 +149,6 @@ def do_excavator_command(method, params):
     else:
         raise ExcavatorAPIError(response_data)
 
-def excavator_algorithm_params(algo, ports):
-    """Return the required list of parameters to add an algorithm to excavator.
-
-    algo -- the algorithm to run
-    ports -- algorithm port information from NiceHash
-    """
-
-    AUTH = '%s.%s:x' % (WALLET_ADDR, WORKER_NAME)
-    stratum = lambda algo: '%s.%s.nicehash.com:%s' % (algo, REGION, ports[algo])
-    return [algo] + sum([[stratum(multi_algo), AUTH] for multi_algo in
-                        algo.split('_')], [])
-
 def main():
     """Main program."""
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
@@ -171,35 +159,39 @@ def main():
     # dict of device id -> excavator worker id
     worker_status = {}
 
+    #device_algorithm = lambda device: [a for a in algorithm_status.keys() if
+    #                                   device in algorithm_status[a][1]][0]
     device_algorithm = lambda device: [a for a in algorithm_status.keys() if
-                                       device in algorithm_status[a][1]][0]
+                                       device in algorithm_status[a]][0]
+
 
     def dispatch_device(device, algo, ports):
         if algo in algorithm_status:
-            algo_id = algorithm_status[algo][0]
-            algorithm_status[algo][1].append(device)
+            #algo_id = algorithm_status[algo][0]
+            algorithm_status[algo].append(device)
         else:
-            response = do_excavator_command('algorithm.add',
-                                            excavator_algorithm_params(algo, ports))
-            algo_id = response['algorithm_id']
-            algorithm_status[algo] = (algo_id, [device])
+            response = do_excavator_command('algorithm.add', [algo])
+            #algo_id = response['algorithm_id']
+            algorithm_status[algo] = [device]
 
-        response = do_excavator_command('worker.add', [str(algo_id), str(device)])
+        #response = do_excavator_command('worker.add', [str(algo_id), str(device)])
+        response = do_excavator_command('worker.add', [algo, str(device)])
         worker_status[device] = response['worker_id']
 
     def free_device(device):
         algo = device_algorithm(device)
-        algorithm_status[algo][1].remove(device)
+        algorithm_status[algo].remove(device)
         worker_id = worker_status[device]
         worker_status.pop(device)
 
         do_excavator_command('worker.free', [str(worker_id)])
 
-        if len(algorithm_status[algo][1]) == 0: # no more devices attached
-            algo_id = algorithm_status[algo][0]
+        if len(algorithm_status[algo]) == 0: # no more devices attached
+            #algo_id = algorithm_status[algo][0]
             algorithm_status.pop(algo)
 
-            do_excavator_command('algorithm.remove', [str(algo_id)])
+            #do_excavator_command('algorithm.remove', [str(algo_id)])
+            do_excavator_command('algorithm.remove', [algo])
 
     def sigint_handler(signum, frame):
         logging.info('cleaning up!')
@@ -222,6 +214,9 @@ def main():
 
     while not contact_excavator():
         sleep(5)
+
+    do_excavator_command('subscribe', ['nhmp.%s.nicehash.com:%s' % (REGION, 3200), WALLET_ADDR+".worker-01"])
+
     while True:
         try:
             paying, ports = nicehash_multialgo_info()
@@ -237,7 +232,6 @@ def main():
         else:
             for device in BENCHMARKS.keys():
                 payrates = nicehash_mbtc_per_day(device, paying)
-                #pprint(payrates)
                 best_algo = max(payrates.keys(), key=lambda algo: payrates[algo])
 
                 if device not in worker_status:
