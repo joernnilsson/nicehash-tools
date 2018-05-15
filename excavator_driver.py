@@ -62,7 +62,8 @@ class Driver:
 
 
     def reaload_oc(self):
-        self.oc_config = json.load(open(self.oc_spec))
+        if self.oc_spec is not None:
+            self.oc_config = json.load(open(self.oc_spec))
 
     def get_device_oc(self, device, algo):  
         uuid = nvidia_smi.device(device)["uuid"]
@@ -207,13 +208,13 @@ def parse_devices(spec):
         return [int(x) for x in spec.split(",")]
 
 
-def read_benchmarks(filename):
+def read_benchmarks(filename, devices):
     # TODO Check if file exists
     data = json.load(open(filename))
 
     bms = {}
-    for d in nvidia_smi.devices():
-        bms[d["id"]] = data
+    for d in devices:
+        bms[d] = data
 
     return bms
 
@@ -241,7 +242,7 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
 
     devices = parse_devices(args.devices)
-    benchmarks = read_benchmarks(args.benchmark)
+    benchmarks = read_benchmarks(args.benchmark, devices)
 
     def sigint_handler(signum, frame):
         driver.cleanup()
