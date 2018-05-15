@@ -1,6 +1,5 @@
 import requests, time, os, sys
 import logging
-import http.cookiejar
 import imaplib
 import re
 import json
