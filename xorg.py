@@ -67,7 +67,8 @@ ss_gpu_layout = ""
 for d in devices:
     dev = overclock.Device(d["id"])
     dev.refresh()
-    bus_address = dev.get("gpu/pci/pci_bus_id")
+    m = re.match(r"([0-9]+):([0-9]+):([0-9]+).([0-9]+)", dev.get("gpu/pci/pci_bus_id"))
+    bus_address = m.group(2) + ":" + m.group(3) + ":" + m.group(4)
     ss_gpu += p_gpu.format(gpu_no=d["id"], edid_path=edid_path, bus_address=bus_address)
     ss_gpu_layout += p_gpu_layout.format(gpu_no=d["id"], location=d["id"]*1024)
 
