@@ -10,9 +10,10 @@ import xml.etree.ElementTree as ET
 
 class Device:
 
-    def __init__(self, number):
+    def __init__(self, number, dummy_xml = None):
         self.logger = logging.getLogger(__name__)
         self.device_number = number
+        self.dummy_xml = dummy_xml
 
 
     def set_power(self, limit):
@@ -28,13 +29,18 @@ class Device:
         
         self.nvidia_smi(["-pl", str(limit)])
         #print(proc.returncode)
+    
+    def set_power_offset(self, offset):
+        limit_default = self.get("gpu/power_readings/default_power_limit", tp = "W")
+        target = limit_default + offset
+        self.set_power(target)
 
     def set_clock_offset(self, offset):
-        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
-        proc = self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[3]='+str(int(offset))])
+        self.set_performance_mode()
+        self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[3]='+str(int(offset))])
 
     def get_clock_offset(self):
-        offset = int(self.nvidia_settigns_get('GPUGraphicsClockOffset[2]'))
+        offset = int(self.nvidia_settings_get('GPUGraphicsClockOffset[2]'))
         return offset
 
     def get_temp(self):
@@ -43,9 +49,15 @@ class Device:
     def get_power_limit(self):
         return self.get("gpu/power_readings/power_limit", tp = "W")
 
-    def nvidia_settigns_get(self, var):
+    def nvidia_settings_get(self, var):
         proc = self.nvidia_settings(["-t", '-q', '[gpu:' + str(self.device_number) + ']/' + var])
         return proc.stdout.decode("utf-8", errors='ignore')
+
+    def set_performance_mode(self):
+        self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
+
+    def unset_performance_mode(self):
+        self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=0'])
 
     def nvidia_settings(self, args):
         cmd = ["nvidia-settings"] + args
@@ -95,11 +107,29 @@ class Device:
             return val
 
     def query(self):
+
+        if self.dummy_xml:
+            return ET.parse(self.dummy_xml)
+
         proc = self.nvidia_smi(["-q", "-x"])
+
+        # Preprocess to remove process names with invalid characters
+        parsable = ""
+        in_processes = False
+        for line in proc.stdout.decode("utf-8", errors='ignore').splitlines():
+            if "<processes>" in line:
+                in_processes = True
+            elif "</processes>" in line:
+                in_processes = False
+            elif not in_processes:
+                parsable = parsable + line + "\n"
+
+        # Write file for future ref        
         with open("out.xml", "w") as f:
-            f.write(proc.stdout.decode("utf-8", errors='ignore') )
-        return ET.fromstring(proc.stdout.decode("utf-8") )
-        #return ET.parse("1080.xml")
+            f.write(parsable)
+
+        # Parse xml
+        return ET.fromstring(parsable)
 
 
 
@@ -120,13 +150,15 @@ if(__name__ == "__main__"):
     parser.add_argument("--clock", "-c", help='set clock offset [Hz]', type=int)
     parser.add_argument("--power", "-p", help='set the power limit [W]', type=float)
 
+    parser.add_argument("--dummy-xml", type=str)
+
     args = parser.parse_args()
 
-    dev = Device(args.device)
+    dev = Device(args.device, dummy_xml=args.dummy_xml)
     dev.refresh()
 
-    if(args.power):
-        dev.set_power(args.power)
+    if(args.power != None):
+        dev.set_power_offset(args.power)
 
     if(args.clock != None):
         dev.set_clock_offset(args.clock)

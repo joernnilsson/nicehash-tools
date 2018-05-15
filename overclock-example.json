@@ -1,0 +1,23 @@
+{
+    "GPU-caea2258-8b8a-7147-8ba3-58a60c149f74":{
+        "default":{
+            "gpu_clock": -10,
+            "mem_clock": 0,
+            "power": 0
+        },
+
+        "equihash":{
+            "gpu_clock": -15,
+            "mem_clock": 0,
+            "power": 0
+        }
+    },
+
+    "default": {
+        "default":{
+            "gpu_clock": -20,
+            "mem_clock": 0,
+            "power": 0
+        }
+    }
+}
