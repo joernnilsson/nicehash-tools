@@ -36,7 +36,7 @@ class Device:
 
     def set_clock_offset(self, offset):
         self.set_performance_mode()
-        self.nvidia_settings(["-a", '[gpu:0]/GPUGraphicsClockOffset[3]='+str(int(offset))])
+        self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUGraphicsClockOffset[3]='+str(int(offset))])
 
     def get_clock_offset(self):
         offset = int(self.nvidia_settings_get('GPUGraphicsClockOffset[2]'))
@@ -53,10 +53,10 @@ class Device:
         return proc.stdout.decode("utf-8", errors='ignore')
 
     def set_performance_mode(self):
-        self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=1'])
+        self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUPowerMizerMode=1'])
 
     def unset_performance_mode(self):
-        self.nvidia_settings(["-a", '[gpu:0]/GPUPowerMizerMode=0'])
+        self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUPowerMizerMode=0'])
 
     def nvidia_settings(self, args):
         cmd = ["nvidia-settings"] + args
