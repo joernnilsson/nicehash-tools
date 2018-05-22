@@ -152,7 +152,7 @@ class Driver:
 
     def start(self):
 
-        logging.info('connecting to excavator at')
+        logging.info('connecting to excavator')
         while not self.excavator.is_alive():
             sleep(5)
 
