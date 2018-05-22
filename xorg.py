@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import sys
 import re
 import os
@@ -9,11 +11,20 @@ import subprocess
 def xorg():
     
     config_filename = tempfile.mktemp()
-   
+    print(sys.argv) 
 
-    subprocess.run(["nvidia-xconfig", "-a", "--allow-empty-initial-configuration", "--cool-bits=31", "--use-display-device=\"DFP-0\"", "--connected-monitor=\"DFP-0\"", "-o", config_filename])
+    subprocess.run(["nvidia-xconfig", "-a", "--allow-empty-initial-configuration", "--cool-bits=31", "--use-display-device='DFP-0'", "--connected-monitor='DFP-0'", "-o", config_filename])
     print("Using config file: " + config_filename)
-    subprocess.run(["xinit", os.getcwd() + "/" + sys.argv[0], "--", ":0", "-once", "-config", config_filename])
+    
+    proc = subprocess.Popen(["xinit", sys.argv[0], "spin", "--", ":0", "-once", "-config", config_filename])
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        proc.terminate()
+        proc.wait(timeout=10.0)
+        proc.kill()
+        proc.wait(timeout=5.0)
+
 
 if __name__ == "__main__":
 
