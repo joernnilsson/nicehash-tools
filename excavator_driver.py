@@ -315,11 +315,14 @@ if __name__ == '__main__':
     parser.add_argument("--overclock", "-o", help="file containing overclocking specs")
     parser.add_argument("--auto-tune-devices", "-u", help='enable overclocking auto tune for given devices', type=str)
     parser.add_argument("--excavator", "-e", help='launch excavator automatically', action='store_true')
+    parser.add_argument("--debug", "-g", help='enablbe debug logging', action='store_true')
 
     args = parser.parse_args()
 
+    loglevel = logging.DEBUG if args.debug else logging.INFO
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=loglevel,
         format="%(asctime)s [%(filename)-20.20s:%(lineno)4d] [%(levelname)-5.5s] %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout)

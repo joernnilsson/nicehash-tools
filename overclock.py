@@ -77,6 +77,7 @@ class Device:
         #print(proc.stdout.decode("utf-8", errors='ignore'))
 
         if(proc.returncode != 0):
+            self.logger.debug("Output: %s", proc.stdout.decode("utf-8", errors='ignore'))
             raise Exception("nvidia-smi exied with error %d" % (proc.returncode))
 
         if(proc.stdout.decode("utf-8", errors='ignore').find("not supported for GPU") != -1):
