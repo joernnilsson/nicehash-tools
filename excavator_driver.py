@@ -9,6 +9,8 @@ import sys
 import re
 import json
 import subprocess
+import time
+import prctl
 from pprint import pprint
 from time import sleep
 import urllib.error
@@ -25,13 +27,19 @@ UPDATE_INTERVAL = 30
 # TODO sync to nh update time
 # TODO oc auto tune
 
-class Job:
-    def __init__(self, device, algo, oc = None):
-        pass
+
+# OC Auto tune:
+# * Detect crash using nvidia_smi
+# - Relaunch only on confirmed cause
+# - Log temperature problems in oc db
+# - Monitor perf caps when deciding strategy
+# - Monitor excavator process using api
+# - Verify excavator is fully dead before restaring
+
 
 class Driver:
 
-    def __init__(self, wallet, region, benchmarks, devices, name, oc_spec, switching_threshold):
+    def __init__(self, wallet, region, benchmarks, devices, name, oc_spec, switching_threshold, run_excavator):
 
         self.wallet = wallet
         self.region = region
@@ -40,6 +48,11 @@ class Driver:
         self.name = name
         self.oc_spec = oc_spec
         self.switching_threshold = switching_threshold
+        self.run_excavator = run_excavator
+
+        self.state = Driver.State.INIT
+        self.device_monitor = nvidia_smi.Monitor()
+        self.excavator_proc = None
 
         # dict of algorithm name -> (excavator id, [attached devices])
         self.algorithm_status = {}
@@ -59,6 +72,12 @@ class Driver:
             for d in devices:
                 self.devices_oc[d] = overclock.Device(d)
                 self.devices_oc[d].refresh()
+
+    class State:
+        INIT = 0
+        RUNNING = 1
+        CRASHING = 2
+        RESTARTING = 3
 
 
     def reaload_oc(self):
@@ -144,57 +163,121 @@ class Driver:
             self.excavator.algo_remove(algo)
 
     def cleanup(self):
-        logging.info('cleaning up!')
+        logging.info('Cleaning up!')
+        self.excavator.is_alive()
+
+        try:
+            self.device_monitor.stop()
+        except Exception as e:
+            logging.error("Error stopping devoce monitor: " + str(e))
+
+        
+        # Reset overclocking
         active_devices = list(self.worker_status.keys())
         for device in active_devices:
-            self.free_device(device)
-        self.excavator.stop()
+            if self.oc_spec is not None:
+                self.devices_oc[device].set_clock_offset(0)
+                try:
+                    self.devices_oc[device].set_power_offset(0)
+                except:
+                    pass
+                self.devices_oc[device].unset_performance_mode()
 
-    def start(self):
+        try:
+            self.excavator.stop()
+        except Exception as e:
+            logging.warn("Warning stopping excavator: " + str(e))
 
+        #if self.excavator_proc:
+            #logging.info('Termniating excavator')
+            #self.excavator_proc.terminate()
+            #self.excavator_proc.wait(timeout=1.0)
+            #logging.info('Killing excavator')
+            #self.excavator_proc.kill()
+            #self.excavator_proc.wait(timeout=1.0)
+
+    def run(self):
+
+        # Start excavator
+        if self.run_excavator:
+            self.excavator_proc = subprocess.Popen(['./temperature_guard.py', '80', 'excavator'], preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
+            
         logging.info('connecting to excavator')
         while not self.excavator.is_alive():
             sleep(5)
 
         self.excavator.subscribe(self.region, self.wallet, self.name)
+        self.device_monitor.start()
+        last_nh_update = 0
+        self.state = Driver.State.RUNNING
 
         while True:
+
+            now = time.time()
+
+            # Read device events
             try:
-                paying, ports = nicehash_api.multialgo_info()
-            except urllib.error.HTTPError as err:
-                logging.warning('server error retrieving NiceHash stats: %s %s' % (err.code, err.reason))
-            except urllib.error.URLError as err:
-                logging.warning('failed to retrieve NiceHash stats: %s' % err.reason)
-            except socket.timeout:
-                logging.warning('failed to retrieve NiceHash stats: timed out')
-            except (json.decoder.JSONDecodeError, KeyError):
-                logging.warning('failed to parse NiceHash stats')
-            else:
-                self.reaload_oc()
-                for device in self.benchmarks.keys():
-                    payrates = self.nicehash_mbtc_per_day(device, paying)
-                    best_algo = max(payrates.keys(), key=lambda algo: payrates[algo])
+                event = self.device_monitor.get_event(block=True, timeout=0.1)
 
-                    if device not in self.worker_status:
-                        logging.info('device %s initial algorithm is %s (%.2f mBTC/day)'
-                                    % (device, best_algo, payrates[best_algo]))
-
-                        self.dispatch_device(device, best_algo, ports)
-
+                if(event["type"] == "xidEvent"):
+                    if(event["value"] == 43):
+                        logging.error("Gpu %i: crashed! Waiting for signal 45 (xid: %i)" % (event["id"], event["value"]))
+                        self.state = Driver.State.CRASHING
+                        self.cleanup()
+                    elif(event["value"] == 45):
+                        logging.info("Gpu %i: recovered after crash (xid: %i)" % (event["id"], event["value"]))
+                        self.state = Driver.State.RESTARTING
                     else:
-                        current_algo = self.device_algorithm(device)
+                        logging.error("Gpu %i: unhandled error (xid: %i)" % (event["id"], event["value"]))
 
-                        if current_algo != best_algo and \
-                        (payrates[current_algo] == 0 or \
-                            payrates[best_algo]/payrates[current_algo] >= 1.0 + self.switching_threshold):
-                            logging.info('switching device %s to %s (%.2f mBTC/day)'
+            except self.device_monitor.Empty:
+                pass
+
+            # Algorithm switching
+            if self.state == Driver.State.RUNNING and now > last_nh_update + UPDATE_INTERVAL:
+                last_nh_update = now
+
+                if not self.excavator.is_alive():
+                    logging.error("Excavator is not alive, exiting")
+                    self.cleanup()
+                    return
+
+                try:
+                    paying, ports = nicehash_api.multialgo_info()
+                except urllib.error.HTTPError as err:
+                    logging.warning('server error retrieving NiceHash stats: %s %s' % (err.code, err.reason))
+                except urllib.error.URLError as err:
+                    logging.warning('failed to retrieve NiceHash stats: %s' % err.reason)
+                except socket.timeout:
+                    logging.warning('failed to retrieve NiceHash stats: timed out')
+                except (json.decoder.JSONDecodeError, KeyError):
+                    logging.warning('failed to parse NiceHash stats')
+                else:
+                    self.reaload_oc()
+                    for device in self.benchmarks.keys():
+                        payrates = self.nicehash_mbtc_per_day(device, paying)
+                        best_algo = max(payrates.keys(), key=lambda algo: payrates[algo])
+
+                        if device not in self.worker_status:
+                            logging.info('device %s initial algorithm is %s (%.2f mBTC/day)'
                                         % (device, best_algo, payrates[best_algo]))
-
-                            self.free_device(device)
 
                             self.dispatch_device(device, best_algo, ports)
 
-            sleep(UPDATE_INTERVAL)
+                        else:
+                            current_algo = self.device_algorithm(device)
+
+                            if current_algo != best_algo and \
+                            (payrates[current_algo] == 0 or \
+                                payrates[best_algo]/payrates[current_algo] >= 1.0 + self.switching_threshold):
+                                logging.info('switching device %s to %s (%.2f mBTC/day)'
+                                            % (device, best_algo, payrates[best_algo]))
+
+                                self.free_device(device)
+
+                                self.dispatch_device(device, best_algo, ports)
+
+            #sleep(UPDATE_INTERVAL)
 
 
 
@@ -230,6 +313,8 @@ if __name__ == '__main__':
     parser.add_argument("--threshold", '-t', help='switching threshold ratio (default: 0.02)', default=0.02, type=float)
     parser.add_argument("--benchmark", '-b', help='benchmark file (default: benchmark.json)', default = "benchmark.json")
     parser.add_argument("--overclock", "-o", help="file containing overclocking specs")
+    parser.add_argument("--auto-tune-devices", "-u", help='enable overclocking auto tune for given devices', type=str)
+    parser.add_argument("--excavator", "-e", help='launch excavator automatically', action='store_true')
 
     args = parser.parse_args()
 
@@ -248,10 +333,10 @@ if __name__ == '__main__':
         driver.cleanup()
         sys.exit(0)
 
-    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, args.overclock, args.threshold)
+    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, args.overclock, args.threshold, args.excavator)
     signal.signal(signal.SIGINT, sigint_handler)
 
-    driver.start()
+    driver.run()
 
 
     

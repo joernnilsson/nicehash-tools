@@ -75,7 +75,7 @@ class ExcavatorApi:
 
     def is_alive(self):
         try:
-            self.message("ping")
+            self.message("miner.alive")
         except (socket.timeout, socket.error):
             return False
         else:
