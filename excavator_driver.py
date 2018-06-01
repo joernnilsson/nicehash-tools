@@ -103,7 +103,7 @@ class Driver:
 
         for e in spec.keys():
             for p in paths:
-                if p[0] in self.oc_config and p[1] in self.oc_config[p[0]] and self.oc_config[p[0]][p[1]][e]:
+                if p[0] in self.oc_config and p[1] in self.oc_config[p[0]] and e in self.oc_config[p[0]][p[1]]:
                     spec[e] = self.oc_config[p[0]][p[1]][e]
                     break
 
@@ -130,13 +130,14 @@ class Driver:
     def overclock(self, device, algo):
         if self.oc_spec is not None:
             spec = self.get_device_oc(device, algo)
-            logging.info("overclocking device %i, gpu_clock: %s, power: %s" % (device, str(spec["gpu_clock"]), str(spec["power"])))
             
             if spec["gpu_clock"]:
                 self.devices_oc[device].set_clock_offset(spec["gpu_clock"])
+                logging.info("overclocking device %i, gpu_clock: %s" % (device, str(spec["gpu_clock"])))
             if spec["power"]:
                 try:
                     self.devices_oc[device].set_power_offset(spec["power"])
+                    logging.info("overclocking device %i, power: %s" % (device, str(spec["power"])))
                 except:
                     pass
             self.devices_oc_spec[device] = spec
