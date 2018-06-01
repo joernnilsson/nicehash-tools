@@ -51,7 +51,7 @@ class Driver:
         self.run_excavator = run_excavator
 
         self.state = Driver.State.INIT
-        self.device_monitor = nvidia_smi.Monitor()
+        self.device_monitor = nvidia_smi.Monitor(data=["xidEvent","temp"])
         self.excavator_proc = None
 
         # dict of algorithm name -> (excavator id, [attached devices])
@@ -218,6 +218,7 @@ class Driver:
             # Read device events
             try:
                 event = self.device_monitor.get_event(block=True, timeout=0.1)
+                logging.debug("Device event: "+str(event))
 
                 if(event["type"] == "xidEvent"):
                     if(event["value"] == 43):
