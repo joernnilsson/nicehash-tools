@@ -236,7 +236,7 @@ class Driver:
             # Read device events
             try:
                 event = self.device_monitor.get_event(block=True, timeout=0.1)
-                logging.debug("Event: "+str(event))
+                logging.debug("Device event: "+str(event))
 
                 if(event["type"] == "xidEvent"):
                     if(event["value"] == 43):
