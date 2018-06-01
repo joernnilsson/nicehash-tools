@@ -51,15 +51,17 @@ class Driver:
         self.run_excavator = run_excavator
 
         self.state = Driver.State.INIT
-        self.device_monitor = nvidia_smi.Monitor()
+        self.device_monitor = nvidia_smi.Monitor(data=["xidEvent", "temp"])
         self.excavator_proc = None
 
         # dict of algorithm name -> (excavator id, [attached devices])
         self.algorithm_status = {}
         # dict of device id -> excavator worker id
         self.worker_status = {}
-        # dict ov device id -> overclocking settings
+        # dict of device id -> overclocking device object
         self.devices_oc = {}
+        # dict of device id -> current overclocking settings
+        self.devices_oc_spec = {}
 
         self.device_algorithm = lambda device: [a for a in self.algorithm_status.keys() if
                                         device in self.algorithm_status[a]][0]
@@ -86,20 +88,26 @@ class Driver:
 
     def get_device_oc(self, device, algo):  
         uuid = nvidia_smi.device(device)["uuid"]
-        if uuid in self.oc_config and algo in self.oc_config[uuid]:
-            return self.oc_config[uuid][algo]
-        elif uuid in self.oc_config and "default" in self.oc_config[uuid]:
-            return self.oc_config[uuid]["default"]
-        elif "default" in self.oc_config and algo in self.oc_config["default"]:
-            return self.oc_config["default"][algo]
-        elif "default" in self.oc_config and "default" in self.oc_config["default"]:
-            return self.oc_config["default"]["default"]
-        else:
-            return {
-                "gpu_clock": 0,
-                "mem_clock": 0,
-                "power": 0
+        spec = {
+                "gpu_clock": None,
+                "mem_clock": None,
+                "power": None
             }
+
+        paths = [
+            [uuid, algo], 
+            [uuid, "default"], 
+            ["default", algo], 
+            ["default", "default"]
+        ]
+
+        for e in spec.keys():
+            for p in paths:
+                if p[0] in self.oc_config and p[1] in self.oc_config[p[0]] and self.oc_config[p[0]][p[1]][e]:
+                    spec[e] = self.oc_config[p[0]][p[1]][e]
+                    break
+
+        return spec
 
     def nicehash_mbtc_per_day(self, device, paying):
         """Calculates the BTC/day amount for every algorithm.
@@ -119,6 +127,34 @@ class Driver:
 
         return dict([(algo, pay_benched(algo)) for algo in bms.keys()])
 
+    def overclock(self, device, algo):
+        if self.oc_spec is not None:
+            spec = self.get_device_oc(device, algo)
+            logging.info("overclocking device %i, gpu_clock: %s, power: %s" % (device, str(spec["gpu_clock"]), str(spec["power"])))
+            
+            if spec["gpu_clock"]:
+                self.devices_oc[device].set_clock_offset(spec["gpu_clock"])
+            if spec["power"]:
+                try:
+                    self.devices_oc[device].set_power_offset(spec["power"])
+                except:
+                    pass
+            self.devices_oc_spec[device] = spec
+
+    def reset_overclock(self, device):
+        # Reset overclocking
+        if self.oc_spec is not None and self.devices_oc_spec[device] is not None:
+            spec = self.devices_oc_spec[device]
+            if spec["gpu_clock"]:
+                self.devices_oc[device].set_clock_offset(0)
+            if spec["power"]:
+                try:
+                    self.devices_oc[device].set_power_offset(0)
+                except:
+                    pass
+            self.devices_oc[device].unset_performance_mode()
+        
+            self.devices_oc_spec[device] = None
 
     def dispatch_device(self, device, algo, ports):
         if algo in self.algorithm_status:
@@ -131,25 +167,12 @@ class Driver:
         self.worker_status[device] = response
 
         # Apply overclocking
-        if self.oc_spec is not None:
-            spec = self.get_device_oc(device, algo)
-            logging.info("overclocking device %i, gpu_clock: %i, power: %i" % (device, spec["gpu_clock"], spec["power"]))
-            self.devices_oc[device].set_clock_offset(spec["gpu_clock"])
-            try:
-                self.devices_oc[device].set_power_offset(spec["power"])
-            except:
-                pass
+        self.overclock(device, algo)
 
     def free_device(self, device):
 
         # Reset overclocking
-        if self.oc_spec is not None:
-            self.devices_oc[device].set_clock_offset(0)
-            try:
-                self.devices_oc[device].set_power_offset(0)
-            except:
-                pass
-            self.devices_oc[device].unset_performance_mode()
+        self.reset_overclock(device)
 
         algo = self.device_algorithm(device)
         self.algorithm_status[algo].remove(device)
@@ -175,13 +198,7 @@ class Driver:
         # Reset overclocking
         active_devices = list(self.worker_status.keys())
         for device in active_devices:
-            if self.oc_spec is not None:
-                self.devices_oc[device].set_clock_offset(0)
-                try:
-                    self.devices_oc[device].set_power_offset(0)
-                except:
-                    pass
-                self.devices_oc[device].unset_performance_mode()
+            self.reset_overclock(device)
 
         try:
             self.excavator.stop()
@@ -218,6 +235,7 @@ class Driver:
             # Read device events
             try:
                 event = self.device_monitor.get_event(block=True, timeout=0.1)
+                logging.debug("Event: "+str(event))
 
                 if(event["type"] == "xidEvent"):
                     if(event["value"] == 43):
@@ -338,6 +356,8 @@ if __name__ == '__main__':
 
     driver = Driver(args.address, args.region, benchmarks, devices, args.worker, args.overclock, args.threshold, args.excavator)
     signal.signal(signal.SIGINT, sigint_handler)
+
+    driver.reaload_oc()
 
     driver.run()
 
