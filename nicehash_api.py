@@ -20,7 +20,7 @@ def multialgo_info():
         name = algorithm['name']
         paying[name] = float(algorithm['paying'])
         ports[name] = int(algorithm['port'])
-    return paying, ports
+    return paying
 
 
 
