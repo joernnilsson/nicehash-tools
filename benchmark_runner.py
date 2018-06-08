@@ -45,7 +45,8 @@ algorithms = [
     "keccak",
     "neoscrypt",
     "nist5",
-    "cryptonightV7"
+    "cryptonightV7",
+    "lyra2z"
     ]
 
 
@@ -112,7 +113,7 @@ def frange(x, y, jump):
     yield y
 
 def greater(a, b):
-    return res[0] > b[0]
+    return a[0] > b[0]
 
 if(__name__ == "__main__"):
 
