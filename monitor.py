@@ -7,6 +7,7 @@ import threading
 import serial
 import signal
 import queue
+from websocket_server import WebsocketServer
 
 import nvidia_smi
 
@@ -37,6 +38,37 @@ class NicehasSource(Source):
 class ExcavatorDriverSource(Source):
     pass
 
+class WsServer(threading.Thread):
+
+    def __init__(self, port, msg_cb=None):
+        threading.Thread.__init__(self)
+
+        self.clients = []
+        self.msg_cb = msg_cb
+
+        self.server = WebsocketServer(port)
+        self.server.set_fn_new_client(self.connected)
+        self.server.set_fn_client_left(self.disconnected)
+        self.server.set_fn_message_received(self.received)
+
+    def run(self):
+        self.server.run_forever()
+    
+    def stop(self):
+        self.server.shutdown()
+
+    def connected(self, client, server):
+        self.clients.append(client)
+
+    def disconnected(self, client, server):
+        self.clients = filter(lambda x: x["id"] == client["id"], self.clients)
+
+    def publish(self, msg):
+        self.server.send_message_to_all(msg)
+
+    def received(self, client, server, msg):
+        if self.msg_cb:
+            self.msg_cb(msg)
 
 class MinerMonitor():
     def __init__(self):
@@ -50,7 +82,7 @@ class MinerMonitor():
         self.running = True
 
         self.serial_port = None
-        #self.ws_server = WsServer(9090, self.process_line)
+        self.ws_server = WsServer(9090, self.process_line)
 
     def add_sensor(self, sensor):
         self.sensors[sensor.key] = sensor
@@ -93,13 +125,13 @@ class MinerMonitor():
     def stop(self):
         print("Stopping")
         self.running = False
-        #self.ws_server.stop()
+        self.ws_server.stop()
 
     def join(self):
         print("Joining")
         self.thread_smi.join()
         self.thread_serial.join()
-        #self.ws_server.join()
+        self.ws_server.join()
 
     def run(self):
 
@@ -109,7 +141,7 @@ class MinerMonitor():
         self.thread_smi = threading.Thread(target=self.smi)
         #self.thread_smi.start()
 
-        #self.ws_server.start()
+        self.ws_server.start()
 
         while self.running:
             try:
