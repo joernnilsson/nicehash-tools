@@ -41,10 +41,8 @@ algorithms = [
     "daggerhashimoto_decred",
     "daggerhashimoto_sia",
     "daggerhashimoto_pascal",
-    "cryptonight",
     "keccak",
     "neoscrypt",
-    "nist5",
     "cryptonightV7",
     "lyra2z"
     ]
