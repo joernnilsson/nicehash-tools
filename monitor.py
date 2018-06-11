@@ -76,6 +76,8 @@ class MinerMonitor():
         self.sensors = {}
         self.add_sensor(Sensor("t_water_hot", "Coolant hot"))
         self.add_sensor(Sensor("t_water_cold", "Coolant cold"))
+        self.add_sensor(Sensor("t_air_ambient_1", "Air 1"))
+        self.add_sensor(Sensor("t_air_ambient_2", "Air 2"))
 
         self.queue = queue.Queue()
 
@@ -136,7 +138,7 @@ class MinerMonitor():
     def run(self):
 
         self.thread_serial = threading.Thread(target=self.serial)
-        #self.thread_serial.start()
+        self.thread_serial.start()
         
         self.thread_smi = threading.Thread(target=self.smi)
         #self.thread_smi.start()
