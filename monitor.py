@@ -46,7 +46,7 @@ class WsServer(threading.Thread):
         self.clients = []
         self.msg_cb = msg_cb
 
-        self.server = WebsocketServer(port)
+        self.server = WebsocketServer(port, "0.0.0.0")
         self.server.set_fn_new_client(self.connected)
         self.server.set_fn_client_left(self.disconnected)
         self.server.set_fn_message_received(self.received)
@@ -61,7 +61,7 @@ class WsServer(threading.Thread):
         self.clients.append(client)
 
     def disconnected(self, client, server):
-        self.clients = filter(lambda x: x["id"] == client["id"], self.clients)
+        self.clients = [x for x in self.clients if x["id"] != client["id"]]
 
     def publish(self, msg):
         self.server.send_message_to_all(msg)
@@ -84,7 +84,7 @@ class MinerMonitor():
         self.running = True
 
         self.serial_port = None
-        self.ws_server = WsServer(9090, self.process_line)
+        self.ws_server = WsServer(8081, self.process_line)
 
     def add_sensor(self, sensor):
         self.sensors[sensor.key] = sensor
@@ -141,7 +141,7 @@ class MinerMonitor():
         self.thread_serial.start()
         
         self.thread_smi = threading.Thread(target=self.smi)
-        #self.thread_smi.start()
+        self.thread_smi.start()
 
         self.ws_server.start()
 
