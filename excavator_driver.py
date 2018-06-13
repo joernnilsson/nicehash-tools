@@ -23,6 +23,7 @@ import overclock
 import ws_ipc
 
 UPDATE_INTERVAL = 30
+SPEED_INTERVAL = 2
 
 # TODO read from config file
 # TODO sync to nh update time
@@ -92,6 +93,8 @@ class Driver:
             self.enabled = False
             self.best_algo = None
             self.current_algo = None
+            self.current_speed = 0.0
+            self.paying = 0.0
 
     class State:
         INIT = 0
@@ -126,6 +129,11 @@ class Driver:
                     break
 
         return spec
+
+    def nicehash_mbtc_algo_per_day(self, algo, speed):
+        if not algo:
+            return 0.0
+        return self.paying_current[algo.lower()]*speed*(24*60*60)*1e-11
 
     def nicehash_mbtc_per_day(self, device, paying):
         """Calculates the BTC/day amount for every algorithm.
@@ -253,6 +261,7 @@ class Driver:
         self.excavator.subscribe(self.region, self.wallet, self.name)
         self.device_monitor.start()
         last_nh_update = 0.0
+        last_speed_update = 0.0
         self.state = Driver.State.RUNNING
 
         while True:
@@ -293,7 +302,8 @@ class Driver:
                         self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
-                                "algo": ds.current_algo
+                                "algo": ds.current_algo,
+                                "speed": ds.current_speed
                             })
 
                 event.respond(response)
@@ -306,6 +316,23 @@ class Driver:
                 print(traceback.format_exc(e))
 
             sleep(0.1)
+
+            # Update device speeds
+            if self.state == Driver.State.RUNNING and now > last_speed_update + SPEED_INTERVAL:
+                last_speed_update = now
+                for device, ds in self.device_settings.items():
+                    speeds = self.excavator.device_speeds(device)
+                    ds.current_speed = speeds[ds.current_algo] if ds.current_algo in speeds else 0.0
+                    ds.paying = self.nicehash_mbtc_algo_per_day(ds.current_algo, ds.current_speed)
+                    self.ipc.publish({
+                            "type": "device.algo",
+                            "device_id": device,
+                            "algo": ds.current_algo,
+                            "speed": ds.current_speed,
+                            "paying": ds.paying
+                        })
+
+
 
             # Algorithm switching
             if self.state == Driver.State.RUNNING and now > last_nh_update + UPDATE_INTERVAL:
@@ -351,10 +378,14 @@ class Driver:
                         if ds.current_algo != ds.best_algo:
                             payrates = self.nicehash_mbtc_per_day(device, self.paying_current)
                             logging.info('Switching device %s to %s (%.2f mBTC/day)' % (device, ds.best_algo, payrates[ds.best_algo]))
+                            ds.current_speed = 0.0
+                            ds.current_pay = 0.0
                             self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
-                                "algo": best_algo
+                                "algo": best_algo,
+                                "speed": ds.current_speed,
+                                "paying": ds.paying
                             })
                             if device not in self.worker_status:
                                 self.dispatch_device(device, ds.best_algo)
@@ -364,10 +395,14 @@ class Driver:
                 else:
                     if device in self.worker_status:
                         logging.info("Disabling device %i" % (device))
+                        ds.current_speed = 0.0
+                        ds.current_pay = 0.0
                         self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
-                                "algo": None
+                                "algo": None,
+                                "speed": ds.current_speed,
+                                "paying": ds.paying
                             })
                         self.free_device(device)
 

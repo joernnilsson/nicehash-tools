@@ -8,9 +8,22 @@
 
     var ws;
     
+    function hashrate(rate){
+      if(!rate){
+        return 0.0
+      }else if(rate > 1e6){
+        return (rate/1e6).toFixed(3) + " MH/s";
+      }else if(rate > 1e3){
+        return (rate/1e3).toFixed(3) + " kH/s";
+      }else{
+        return rate.toFixed(3) + " H/s";
+      }
+    }
+
+
     function init() {
       // Connect to Web Socket
-      address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname;
+      address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname
       ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
       // Set event handlers.
       ws.onopen = function() {
@@ -43,6 +56,8 @@
               el.querySelector(".device_id").innerHTML = data.device_id;
               el.querySelectorAll("button").forEach(e => e.setAttribute("device", data.device_id))
               el.querySelector(".algo").innerHTML = data.algo;
+              el.querySelector(".speed").innerHTML = hashrate(data.speed);
+              el.querySelector(".paying").innerHTML = data.paying ? data.paying.toFixed(3) : 0.0;
             break;
           }
         }
@@ -101,7 +116,7 @@
   
   <template id="device">
     <div class="device" device="99">
-      <span>Device <span class="device_id">99</span>: </span><button class="device-enable" device="99" value="1">Enable</button> <button class="device-enable" device="99" value="0">Disable</button> <span class="algo"></span>
+      <span>Device <span class="device_id">99</span>: </span><button class="device-enable" device="99" value="1">Enable</button> <button class="device-enable" device="99" value="0">Disable</button> <span class="algo"></span> (<span class="speed"></span> / <span class="paying"></span> mBTC/day)
     </div>
   </template>
 

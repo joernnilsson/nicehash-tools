@@ -17,7 +17,14 @@ class StaticHttpServer(threading.Thread):
         os.chdir(web_dir)
 
         Handler = http.server.SimpleHTTPRequestHandler
-        self.httpd = socketserver.TCPServer(("", self.port), Handler)
+        self.httpd = socketserver.TCPServer(("", self.port), Handler, bind_and_activate=False)
+        self.httpd.allow_reuse_address = True
+        try:
+            self.httpd.server_bind()
+            self.httpd.server_activate()
+        except:
+            self.httpd.server_close()
+            raise
         self.httpd.serve_forever()
 
     def stop(self):

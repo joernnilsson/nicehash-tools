@@ -71,7 +71,7 @@ class ExcavatorApi:
                 for a in w["algorithms"]:
                     out[a["name"]] = a["speed"]
                 return out
-        raise ValueError("No such device: %i" % (device))
+        return {}
 
     def is_alive(self):
         try:
