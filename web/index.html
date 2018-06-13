@@ -10,8 +10,8 @@
     
     function init() {
       // Connect to Web Socket
-      ws = new WebSocket("ws://"+window.location.hostname+":9090/miner-monitor/ws");
-      //ws = new WebSocket("ws://localhost:9090/miner-monitor/ws");
+      address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname;
+      ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
       // Set event handlers.
       ws.onopen = function() {
         output("onopen");
