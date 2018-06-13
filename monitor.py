@@ -48,7 +48,7 @@ class WsServer(threading.Thread):
         self.clients = []
         self.msg_cb = msg_cb
 
-        self.server = WebsocketServer(port)
+        self.server = WebsocketServer(port, "0.0.0.0")
         self.server.set_fn_new_client(self.connected)
         self.server.set_fn_client_left(self.disconnected)
         self.server.set_fn_message_received(self.received)
