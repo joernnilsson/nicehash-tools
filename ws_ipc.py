@@ -164,7 +164,7 @@ class IpcClient(threading.Thread):
             self.requests_out[parsed["id"]][1] = parsed["data"]
             self.requests_out[parsed["id"]][0].set()
         else:
-            self.messages.put(data)
+            self.messages.put(parsed["data"])
 
         
     def stop(self):
@@ -182,7 +182,10 @@ class IpcClient(threading.Thread):
                 "data": msg
             }
         )
-        self.ws.send(out)
+        try:
+            self.ws.send(out)
+        except websocket._exceptions.WebSocketConnectionClosedException:
+            print("Ipc client not connected")
 
     def request(self, data, timeout=None, pct_type="request"):
         seq = self.__next_id()
@@ -193,7 +196,10 @@ class IpcClient(threading.Thread):
                 "data": data
             }
         )
-        self.ws.send(out)
+        try:
+            self.ws.send(out)
+        except websocket._exceptions.WebSocketConnectionClosedException:
+            raise IpcException("Ipc client not connected")
 
         # Block until received
         ev = threading.Event()

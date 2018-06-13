@@ -1,0 +1,126 @@
+<html>
+<head>
+  <title>Simple client</title>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+  <script type="text/javascript">
+
+    var ws;
+    
+    function init() {
+      // Connect to Web Socket
+      ws = new WebSocket("ws://"+window.location.hostname+":9090/miner-monitor/ws");
+      //ws = new WebSocket("ws://localhost:9090/miner-monitor/ws");
+      // Set event handlers.
+      ws.onopen = function() {
+        output("onopen");
+      };
+      
+      ws.onmessage = function(e) {
+        // e.data contains received string.
+        data = JSON.parse(e.data)
+        console.log("onmessage: ", data);
+
+        if(data.param){
+          for (let e of document.getElementsByClassName(data.param)){
+            e.innerHTML = parseInt(data.value)
+          }
+        } else if(data.type){
+          switch(data.type){
+            case "device.algo":
+              let selector = "#devices .device[device='"+data.device_id+"']";
+              
+              if(!document.querySelector(selector)){
+                let t = document.querySelector('#device');
+                let el = document.importNode(t.content, true);
+                el.firstElementChild.setAttribute("device", data.device_id);
+                document.querySelector('#devices').appendChild(el);
+              }
+              
+              let el = document.querySelector(selector)
+              
+              el.querySelector(".device_id").innerHTML = data.device_id;
+              el.querySelectorAll("button").forEach(e => e.setAttribute("device", data.device_id))
+              el.querySelector(".algo").innerHTML = data.algo;
+            break;
+          }
+        }
+      };
+      
+      ws.onclose = function() {
+        output("onclose");
+      };
+      ws.onerror = function(e) {
+        output("onerror");
+        console.log(e)
+      };
+    }
+    
+    function onSubmit() {
+      var input = document.getElementById("input");
+      // You can send message to the Web Socket using ws.send.
+      ws.send(input.value);
+      output("send: " + input.value);
+      input.value = "";
+      input.focus();
+    }
+    
+    function onCloseClick() {
+      ws.close();
+    }
+    
+    function output(str) {
+      /*
+      var log = document.getElementById("log");
+      var escaped = str.replace(/&/, "&amp;").replace(/</, "&lt;").
+        replace(/>/, "&gt;").replace(/"/, "&quot;"); // "
+      log.innerHTML = escaped + "<br>" + log.innerHTML;
+      */
+      console.log(str)
+    }
+
+
+
+  $(document).ready(function(){
+      $(document).on("click", "button.device-enable", function(e){
+        let packet = {
+            cmd: "device.enable",
+            device_id: parseInt(e.target.attributes.device.value),
+            enable: e.target.attributes.value.value == "1"
+          };
+          ws.send(JSON.stringify(packet));
+      });
+
+
+
+  });
+
+
+  </script>
+  
+  <template id="device">
+    <div class="device" device="99">
+      <span>Device <span class="device_id">99</span>: </span><button class="device-enable" device="99" value="1">Enable</button> <button class="device-enable" device="99" value="0">Disable</button> <span class="algo"></span>
+    </div>
+  </template>
+
+</head>
+<body onload="init();">
+  <form onsubmit="onSubmit(); return false;">
+    <input type="text" id="input">
+    <input type="submit" value="Send">
+    <button onclick="onCloseClick(); return false;">close</button>
+  </form>
+  <div id="devices"></div>
+  <div id="log"></div>
+  <pre id="af">
+>--[w(c): <span class="t_water_cold">00</span>]----[2(g3): <span class="t_gpu.3">00</span>]--[1(g1): <span class="t_gpu.1">00</span>]--[3(g2): <span class="t_gpu.2">00</span>]----[w(h): <span class="t_water_hot">00</span>]--->
+              |                                        |
+              ---[5(g0): <span class="t_gpu.0">00</span>]--[4(g4): <span class="t_gpu.4">00</span>]---------------
+  
+
+
+  </pre>
+</body>
+</html>

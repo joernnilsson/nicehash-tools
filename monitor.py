@@ -12,6 +12,7 @@ import ws_ipc
 import json
 
 import nvidia_smi
+import static_http_server
 
 class Sensor():
     def __init__(self, key, name=None):
@@ -42,11 +43,12 @@ class ExcavatorDriverSource(Source):
 
 class WsServer(threading.Thread):
 
-    def __init__(self, port, msg_cb=None):
+    def __init__(self, port, msg_cb=None, connected_cb=None):
         threading.Thread.__init__(self)
 
         self.clients = []
         self.msg_cb = msg_cb
+        self.connected_cb = connected_cb
 
         self.server = WebsocketServer(port, "0.0.0.0")
         self.server.set_fn_new_client(self.connected)
@@ -61,6 +63,8 @@ class WsServer(threading.Thread):
 
     def connected(self, client, server):
         self.clients.append(client)
+        if self.connected_cb:
+            self.connected_cb(client)
 
     def disconnected(self, client, server):
         self.clients = [x for x in self.clients if x["id"] != client["id"]]
@@ -86,7 +90,8 @@ class MinerMonitor():
         self.running = True
 
         self.serial_port = None
-        self.ws_server = WsServer(9090, self.process_json)
+        self.ws_server = WsServer(9090, self.process_json, self.ws_connected)
+        self.http_server = static_http_server.StaticHttpServer(8080, "web")
 
         self.excavator_driver = ws_ipc.IpcClient("localhost", 8082)
 
@@ -135,6 +140,7 @@ class MinerMonitor():
         self.running = False
         self.ws_server.stop()
         self.excavator_driver.stop()
+        self.http_server.stop()
 
     def join(self):
         print("Joining")
@@ -146,6 +152,8 @@ class MinerMonitor():
         print("d")
         self.ws_server.join()
         print("e")
+        self.http_server.join()
+        print("f")
 
     def run(self):
 
@@ -156,6 +164,7 @@ class MinerMonitor():
         self.thread_smi.start()
 
         self.ws_server.start()
+        self.http_server.start()
 
         print(str(threading.get_ident())+" monitor run")
         self.excavator_driver.start()
@@ -167,6 +176,8 @@ class MinerMonitor():
                 if "ipc" in e and e["ipc"] == "connected":
                     self.excavator_driver.message({"cmd": "publish.state"})
                 else:
+                    print(str(type(e)))
+                    print(e)
                     self.ws_server.publish(e)
             except ws_ipc.IpcClient.Empty:
                 pass
@@ -176,7 +187,9 @@ class MinerMonitor():
             except queue.Empty:
                 continue
             self.input(e[0], e[1])
-        
+
+    def ws_connected(self, client):
+            self.excavator_driver.message({"cmd": "publish.state"})
 
     def input(self, key, value):
 
