@@ -20,7 +20,7 @@ import nvidia_smi
 import excavator_api
 import nicehash_api
 import overclock
-import simple_ipc
+import ws_ipc
 
 UPDATE_INTERVAL = 30
 
@@ -210,7 +210,7 @@ class Driver:
         logging.info('Cleaning up!')
         self.excavator.is_alive()
 
-        self.ipc.shutdown()
+        self.ipc.stop()
 
         try:
             self.device_monitor.stop()
@@ -239,7 +239,7 @@ class Driver:
     def run(self):
 
         # Start IPC to receive remote commands
-        self.ipc = simple_ipc.IpcServer(self.ipc_port)
+        self.ipc = ws_ipc.IpcServer(self.ipc_port)
         self.ipc.start()
 
         # Start excavator
@@ -286,12 +286,19 @@ class Driver:
                 logging.debug("IPC event: "+str(event))
 
                 d = event.data
-                if(d["cmd"] == "device.enable"):
+                if d["cmd"] == "device.enable":
                     self.device_settings[d["device_id"]].enabled = d["enable"]
+                elif d["cmd"] == "publish.state":
+                    for device, ds in self.device_settings.items():
+                        self.ipc.publish({
+                                "type": "device.algo",
+                                "device_id": device,
+                                "algo": ds.current_algo
+                            })
 
                 event.respond(response)
 
-            except simple_ipc.IpcServer.Empty:
+            except ws_ipc.IpcServer.Empty:
                 pass
             except Exception as e:
                 logging.error("Error from IPC Server: "+str(e))
@@ -344,6 +351,11 @@ class Driver:
                         if ds.current_algo != ds.best_algo:
                             payrates = self.nicehash_mbtc_per_day(device, self.paying_current)
                             logging.info('Switching device %s to %s (%.2f mBTC/day)' % (device, ds.best_algo, payrates[ds.best_algo]))
+                            self.ipc.publish({
+                                "type": "device.algo",
+                                "device_id": device,
+                                "algo": best_algo
+                            })
                             if device not in self.worker_status:
                                 self.dispatch_device(device, ds.best_algo)
                             else:
@@ -352,6 +364,11 @@ class Driver:
                 else:
                     if device in self.worker_status:
                         logging.info("Disabling device %i" % (device))
+                        self.ipc.publish({
+                                "type": "device.algo",
+                                "device_id": device,
+                                "algo": None
+                            })
                         self.free_device(device)
 
 
@@ -393,7 +410,7 @@ if __name__ == '__main__':
     parser.add_argument("--overclock", "-o", help="file containing overclocking specs")
     parser.add_argument("--auto-tune-devices", "-u", help='enable overclocking auto tune for given devices', type=str)
     parser.add_argument("--excavator", "-e", help='launch excavator automatically', action='store_true')
-    parser.add_argument("--ipc-port", "-p", help='port to expose ipc interface on', type=int, default=8080)
+    parser.add_argument("--ipc-port", "-p", help='port to expose ipc interface on', type=int, default=8082)
     parser.add_argument("--debug", "-g", help='enablbe debug logging', action='store_true')
     parser.add_argument("--autostart", "-m", help='autostart mining', action='store_true')
 

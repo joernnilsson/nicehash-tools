@@ -8,6 +8,8 @@ import serial
 import signal
 import queue
 from websocket_server import WebsocketServer
+import ws_ipc
+import json
 
 import nvidia_smi
 
@@ -61,14 +63,14 @@ class WsServer(threading.Thread):
         self.clients.append(client)
 
     def disconnected(self, client, server):
-        self.clients = filter(lambda x: x["id"] == client["id"], self.clients)
+        self.clients = [x for x in self.clients if x["id"] != client["id"]]
 
     def publish(self, msg):
-        self.server.send_message_to_all(msg)
+        self.server.send_message_to_all(json.dumps(msg))
 
     def received(self, client, server, msg):
         if self.msg_cb:
-            self.msg_cb(msg)
+            self.msg_cb(json.loads(msg))
 
 class MinerMonitor():
     def __init__(self):
@@ -84,7 +86,9 @@ class MinerMonitor():
         self.running = True
 
         self.serial_port = None
-        self.ws_server = WsServer(9090, self.process_line)
+        self.ws_server = WsServer(9090, self.process_json)
+
+        self.excavator_driver = ws_ipc.IpcClient("localhost", 8082)
 
     def add_sensor(self, sensor):
         self.sensors[sensor.key] = sensor
@@ -103,6 +107,8 @@ class MinerMonitor():
 
 
     def serial(self):
+        if len(sys.argv) < 2:
+            return
         while self.running:
             try:
                 with serial.Serial(sys.argv[1], 115200, timeout=0.1) as ser:
@@ -128,12 +134,18 @@ class MinerMonitor():
         print("Stopping")
         self.running = False
         self.ws_server.stop()
+        self.excavator_driver.stop()
 
     def join(self):
         print("Joining")
         self.thread_smi.join()
+        print("b")
         self.thread_serial.join()
+        print("c")
+        self.excavator_driver.join()
+        print("d")
         self.ws_server.join()
+        print("e")
 
     def run(self):
 
@@ -141,11 +153,24 @@ class MinerMonitor():
         self.thread_serial.start()
         
         self.thread_smi = threading.Thread(target=self.smi)
-        #self.thread_smi.start()
+        self.thread_smi.start()
 
         self.ws_server.start()
 
+        print(str(threading.get_ident())+" monitor run")
+        self.excavator_driver.start()
+
         while self.running:
+         
+            try:
+                e = self.excavator_driver.get_event(block=False)
+                if "ipc" in e and e["ipc"] == "connected":
+                    self.excavator_driver.message({"cmd": "publish.state"})
+                else:
+                    self.ws_server.publish(e)
+            except ws_ipc.IpcClient.Empty:
+                pass
+
             try:
                 e = self.queue.get(block=True, timeout=0.1)
             except queue.Empty:
@@ -159,7 +184,7 @@ class MinerMonitor():
 
         if key_parts[0] == "cmd":
             print("Got command: "+key+": "+value)
-            self.input("t_water_hot", 23.0)
+            #self.input("t_water_hot", 23.0)
 
         else:
             if key == "log":
@@ -174,8 +199,14 @@ class MinerMonitor():
             else:
                 print("ERROR unknown command: "+key)
             
-            self.ws_server.publish(key+"/"+str(value))
+            #self.ws_server.publish(key+"/"+str(value))
+            self.ws_server.publish({"param": key, "value": value})
 
+    def process_json(self, data):
+        print("Got json: "+str(data))
+        print("Got json: "+str(type(data)))
+        if "cmd" in data:
+            self.excavator_driver.message(data)
 
     def process_line(self, line):
         m = re.match("(.*)/(.*)", str(line))
