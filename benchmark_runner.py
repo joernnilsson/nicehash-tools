@@ -71,7 +71,7 @@ def run_benchmark(task: Benchmark):
         dev.set_clock_offset(task.clock)
 
     if(task.power != None):
-        dev.set_power(task.power)
+        dev.set_power_offset(task.power)
 
     task.result = excavator_benchmark.benchmark(task.executable, task.device, task.algo, task.benchmark_length)
     
