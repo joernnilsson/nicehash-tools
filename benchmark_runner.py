@@ -157,7 +157,7 @@ if(__name__ == "__main__"):
         logger.info("Result (%d/%d): %s H/s", progress, len(tasks), ", ".join(str(x) for x in t.result))
         output = output + t.csv() + "\n"
 
-        if(not t.algo in top or greater(top[t.algo], t.result)):
+        if(not t.algo in top or top[t.algo] > t.result[0]):
             top[t.algo] = t.result[0] if len(t.result) == 1 else t.result
             
         progress = progress + 1
