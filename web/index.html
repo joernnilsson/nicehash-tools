@@ -7,6 +7,7 @@
   <script type="text/javascript">
 
     var ws;
+    var svg;
     
     function hashrate(rate){
       if(!rate){
@@ -23,7 +24,8 @@
 
     function init() {
       // Connect to Web Socket
-      address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname
+      address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname;
+      address = "sf.while1.no";
       ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
       // Set event handlers.
       ws.onopen = function() {
@@ -33,10 +35,13 @@
       ws.onmessage = function(e) {
         // e.data contains received string.
         data = JSON.parse(e.data)
-        console.log("onmessage: ", data);
+        //console.log("onmessage: ", data);
 
         if(data.param){
           for (let e of document.getElementsByClassName(data.param)){
+            e.innerHTML = parseInt(data.value)
+          }
+          for (let e of svg.getElementsByClassName(data.param)){
             e.innerHTML = parseInt(data.value)
           }
         } else if(data.type){
@@ -98,6 +103,22 @@
 
 
   $(document).ready(function(){
+
+    // Prepare svg
+      document.getElementById("pnid").addEventListener("load",function(o) {
+        let doc = o.target.contentDocument;
+        svg = doc;
+        for (let e of doc.querySelectorAll("span, div")){
+          if(e.innerHTML == e.innerText){
+            console.log(e.innerText);
+            e.setAttribute("class", e.innerText);
+
+          }
+        }
+        
+      }, false);
+
+
       $(document).on("click", "button.device-enable", function(e){
         let packet = {
             cmd: "device.enable",
@@ -137,5 +158,11 @@
 
 
   </pre>
+
+
+	<object type="image/svg+xml" data="piping.svg" id="pnid">
+</object>
+
+
 </body>
 </html>
