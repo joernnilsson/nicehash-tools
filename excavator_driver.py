@@ -95,6 +95,7 @@ class Driver:
             self.current_algo = None
             self.current_speed = 0.0
             self.paying = 0.0
+            self.uuid = ""
 
     class State:
         INIT = 0
@@ -250,6 +251,11 @@ class Driver:
         self.ipc = ws_ipc.IpcServer(self.ipc_port)
         self.ipc.start()
 
+        # Get gpu info
+        for device, ds in self.device_settings.items():
+            ds.uuid = nvidia_smi.device(device)["uuid"]
+        
+
         # Start excavator
         if self.run_excavator:
             self.excavator_proc = subprocess.Popen(['./temperature_guard.py', '80', 'excavator'], preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
@@ -302,8 +308,10 @@ class Driver:
                         self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
+                                "device_uuid": ds.uuid,
                                 "algo": ds.current_algo,
-                                "speed": ds.current_speed
+                                "speed": ds.current_speed,
+                                "paying": ds.paying
                             })
 
                 event.respond(response)
@@ -327,6 +335,7 @@ class Driver:
                     self.ipc.publish({
                             "type": "device.algo",
                             "device_id": device,
+                            "device_uuid": ds.uuid,
                             "algo": ds.current_algo,
                             "speed": ds.current_speed,
                             "paying": ds.paying
@@ -383,6 +392,7 @@ class Driver:
                             self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
+                                "device_uuid": ds.uuid,
                                 "algo": best_algo,
                                 "speed": ds.current_speed,
                                 "paying": ds.paying
@@ -400,6 +410,7 @@ class Driver:
                         self.ipc.publish({
                                 "type": "device.algo",
                                 "device_id": device,
+                                "device_uuid": ds.uuid,
                                 "algo": None,
                                 "speed": ds.current_speed,
                                 "paying": ds.paying
