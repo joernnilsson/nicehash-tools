@@ -44,7 +44,8 @@ algorithms = [
     "keccak",
     "neoscrypt",
     "cryptonightV7",
-    "lyra2z"
+    "lyra2z",
+    "x16r"
     ]
 
 
