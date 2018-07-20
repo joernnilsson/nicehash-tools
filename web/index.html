@@ -40,68 +40,101 @@
       // Connect to Web Socket
       address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname;
       address = "sf.while1.no";
-      ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
-      // Set event handlers.
-      ws.onopen = function() {
-        output("onopen");
-      };
+      
+      let reconnect = null;
 
-      ws.onmessage = function(e) {
-        // e.data contains received string.
-        data = JSON.parse(e.data)
-        //console.log("onmessage: ", data);
+      let connect =  () => {
+        console.log("connecting");
+        let ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
+      
 
-        if(data.param){
-          for (let e of document.getElementsByClassName(data.param)){
-            e.innerHTML = parseInt(data.value)
-          }
-          for (let e of svg.getElementsByClassName(data.param)){
-            e.innerHTML = parseInt(data.value)
-          }
-          for (let a of paramAlias[data.param] || []){
-            for (let e of svg.getElementsByClassName(a)){
+        // Set event handlers.
+        ws.onopen = function() {
+          output("onopen");
+          if(reconnect)
+            clearInterval(reconnect)
+        };
+
+        ws.onclose = () => {
+          output("onclose");
+          if(reconnect)
+            clearTimeout(reconnect)
+        
+          reconnect = setTimeout(() => {
+            console.log("reconnecting")
+            connect();
+          }, 2000);
+        
+        }
+
+        ws.onmessage = function(e) {
+          // e.data contains received string.
+          data = JSON.parse(e.data)
+          //console.log("onmessage: ", data);
+
+          if(data.param){
+            for (let e of document.getElementsByClassName(data.param)){
               e.innerHTML = parseInt(data.value)
             }
-          }
-        } else if(data.type){
-          switch(data.type){
-            case "device.algo":
-              let selector = "#device_table .device_row[device='"+data.device_id+"']";
-              
-              if(!document.querySelector(selector)){
-                let t = document.querySelector('#device_table_row');
-                let el = document.importNode(t.content, true);
-                el.firstElementChild.setAttribute("device", data.device_id);
-                el.querySelector(".device_temperature").classList.add("t_gpu."+data.device_id);
-                document.querySelector('#device_table tbody').appendChild(el);
-
-                paramAlias["t_gpu."+data.device_id] = ["t_gpu."+data.device_uuid];
+            for (let e of svg.getElementsByClassName(data.param)){
+              e.innerHTML = parseInt(data.value)
+            }
+            for (let a of paramAlias[data.param] || []){
+              for (let e of svg.getElementsByClassName(a)){
+                e.innerHTML = parseInt(data.value)
               }
-              
-              let el = document.querySelector(selector)
-              
-              el.querySelector(".device_id").innerHTML = data.device_id;
-              el.querySelector(".device_uuid").innerHTML = data.device_uuid;
-              el.querySelectorAll("button").forEach(e => e.setAttribute("device", data.device_id))
-              el.querySelector(".algo").innerHTML = data.algo;
-              el.querySelector(".speed").innerHTML = hashrate(data.speed);
-              el.querySelector(".paying").innerHTML = (data.paying ? data.paying.toFixed(3) : 0.0) + " mBTC/d";
-            
-              gpuMap[data.device_id] = data;
+            }
+          } else if(data.type){
+            switch(data.type){
+              case "device.algo":
+                let selector = "#device_table .device_row[device='"+data.device_id+"']";
+                
+                if(!document.querySelector(selector)){
+                  let t = document.querySelector('#device_table_row');
+                  let el = document.importNode(t.content, true);
+                  el.firstElementChild.setAttribute("device", data.device_id);
+                  el.querySelector(".device_temperature").classList.add("t_gpu."+data.device_id);
+                  document.querySelector('#device_table tbody').appendChild(el);
 
-            break;
+                  paramAlias["t_gpu."+data.device_id] = ["t_gpu."+data.device_uuid];
+                }
+                
+                let el = document.querySelector(selector)
+                
+                el.querySelector(".device_id").innerHTML = data.device_id;
+                el.querySelector(".device_uuid").innerHTML = data.device_uuid;
+                el.querySelectorAll("button").forEach(e => e.setAttribute("device", data.device_id))
+                el.querySelector(".algo").innerHTML = data.algo;
+                el.querySelector(".speed").innerHTML = hashrate(data.speed);
+                el.querySelector(".paying").innerHTML = (data.paying ? data.paying.toFixed(3) : 0.0) + " mBTC/d";
+              
+                gpuMap[data.device_id] = data;
+
+              break;
+            }
           }
+        };
+        
+        ws.onerror = function(e) {
+          output("onerror");
+          console.log(e)
+        };
+
+        return ws;
+      }
+
+      /*reconnect = setInterval(() => {
+        console.log("reconnecting")
+        let tws = connect();
+        if(tws){
+          ws = tws;
         }
-      };
-      
-      ws.onclose = function() {
-        output("onclose");
-      };
-      ws.onerror = function(e) {
-        output("onerror");
-        console.log(e)
-      };
-    }
+      }, 2000);
+      */
+
+      // Connect
+      connect();
+  }
     
     function onSubmit() {
       var input = document.getElementById("input");
