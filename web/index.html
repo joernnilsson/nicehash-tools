@@ -45,7 +45,7 @@
 
       let connect =  () => {
         console.log("connecting");
-        let ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
+        ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
       
 
         // Set event handlers.
