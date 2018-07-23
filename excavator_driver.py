@@ -58,10 +58,6 @@ class Driver:
         self.excavator_proc = None
         self.ipc = None
 
-        # dict of algorithm name -> (excavator id, [attached devices])
-        self.algorithm_status = {}
-        # dict of device id -> excavator worker id
-        self.worker_status = {}
         # dict of device id -> overclocking device object
         self.devices_oc = {}
         # dict of device id -> current overclocking settings
@@ -75,9 +71,6 @@ class Driver:
             dev = Driver.DeviceSettings()
             dev.enabled = autostart
             self.device_settings[d] = dev
-
-        self.device_algorithm = lambda device: [a for a in self.algorithm_status.keys() if
-                                        device in self.algorithm_status[a]][0]
 
         self.excavator = excavator_api.ExcavatorApi()
 
@@ -96,6 +89,7 @@ class Driver:
             self.current_speed = 0.0
             self.paying = 0.0
             self.uuid = ""
+            self.running = False
 
     class State:
         INIT = 0
@@ -185,35 +179,26 @@ class Driver:
             self.devices_oc_spec[device] = None
 
     def dispatch_device(self, device, algo):
-        self.device_settings[device].current_algo = algo
-        if algo in self.algorithm_status:
-            self.algorithm_status[algo].append(device)
-        else:
-            response = self.excavator.algo_add(algo)
-            self.algorithm_status[algo] = [device]
+        ds = self.device_settings[device]
+        ds.current_algo = algo
 
-        response = self.excavator.worker_add(algo, device)
-        self.worker_status[device] = response
+        self.excavator.state_set(ds.device_uuid, algo, self.region, self.wallet, self.name)
 
-        # Apply overclocking
         self.overclock(device, algo)
 
-    def free_device(self, device):
+        self.running = True
 
-        self.device_settings[device].current_algo = None
+    def free_device(self, device):
+        ds = self.device_settings[device]
+        ds.current_algo = None
+
         # Reset overclocking
         self.reset_overclock(device)
 
-        algo = self.device_algorithm(device)
-        self.algorithm_status[algo].remove(device)
-        worker_id = self.worker_status[device]
-        self.worker_status.pop(device)
+        self.excavator.state_set(ds.device_uuid, "", self.region, self.wallet, self.name)
 
-        self.excavator.worker_free(worker_id)
+        self.running = False
 
-        if len(self.algorithm_status[algo]) == 0:
-            self.algorithm_status.pop(algo)
-            self.excavator.algo_remove(algo)
 
     def cleanup(self):
         logging.info('Cleaning up!')
@@ -228,9 +213,9 @@ class Driver:
 
         
         # Reset overclocking
-        active_devices = list(self.worker_status.keys())
-        for device in active_devices:
-            self.reset_overclock(device)
+        for device, ds in self.device_settings.items():
+            if ds.running:
+                self.reset_overclock(device)
 
         try:
             self.excavator.stop()
@@ -397,13 +382,14 @@ class Driver:
                                 "speed": ds.current_speed,
                                 "paying": ds.paying
                             })
-                            if device not in self.worker_status:
-                                self.dispatch_device(device, ds.best_algo)
-                            else:
+
+                            if ds.running:
                                 self.free_device(device)
-                                self.dispatch_device(device, best_algo)
+        
+                            self.dispatch_device(device, best_algo)
+
                 else:
-                    if device in self.worker_status:
+                    if ds.running:
                         logging.info("Disabling device %i" % (device))
                         ds.current_speed = 0.0
                         ds.current_pay = 0.0

@@ -55,7 +55,7 @@ class ExcavatorApi:
         self.do_excavator_command('workers.reset', [str(x) for x in workers])
 
     def subscribe(self, region, wallet, name):
-        self.do_excavator_command('subscribe', ['nhmp.%s.nicehash.com:%s' % (region, 3200), wallet + "." + name])
+        self.do_excavator_command('subscribe', [self.get_stratum(region), wallet + "." + name])
 
     def unsubscribe(self):
         self.do_excavator_command('unsubscribe')
@@ -73,6 +73,19 @@ class ExcavatorApi:
                 return out
         return {}
 
+    def state_set(self, device_uuid, algorithm, region, wallet, name):
+        params = {}
+        params["btc_address"] = wallet + "." + name + ":x"
+        params["stratum_url"] = self.get_stratum(region)
+        params["devices"] = [
+            {
+                "device_uuid": device_uuid,
+                "algorithm": algorithm,
+                "params": []
+            }
+        ]
+
+
     def is_alive(self):
         try:
             self.message("miner.alive")
@@ -80,6 +93,9 @@ class ExcavatorApi:
             return False
         else:
             return True
+
+    def get_stratum(self, region):
+        return ['nhmp.%s.nicehash.com:%s' % (region, 3200)]
 
     def do_excavator_command(self, method, params = []):
         """Sends a command to excavator, returns the JSON-encoded response.
