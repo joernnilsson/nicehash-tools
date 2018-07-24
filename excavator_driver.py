@@ -182,11 +182,11 @@ class Driver:
         ds = self.device_settings[device]
         ds.current_algo = algo
 
-        self.excavator.state_set(ds.device_uuid, algo, self.region, self.wallet, self.name)
+        self.excavator.state_set(ds.uuid, algo, self.region, self.wallet, self.name)
 
         self.overclock(device, algo)
 
-        self.running = True
+        ds.running = True
 
     def free_device(self, device):
         ds = self.device_settings[device]
@@ -195,9 +195,9 @@ class Driver:
         # Reset overclocking
         self.reset_overclock(device)
 
-        self.excavator.state_set(ds.device_uuid, "", self.region, self.wallet, self.name)
+        self.excavator.state_set(ds.uuid, "", self.region, self.wallet, self.name)
 
-        self.running = False
+        ds.running = False
 
 
     def cleanup(self):
@@ -249,7 +249,7 @@ class Driver:
         while not self.excavator.is_alive():
             sleep(5)
 
-        self.excavator.subscribe(self.region, self.wallet, self.name)
+        #self.excavator.subscribe(self.region, self.wallet, self.name)
         self.device_monitor.start()
         last_nh_update = 0.0
         last_speed_update = 0.0
@@ -435,7 +435,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--devices", "-d", help='devices to use (default: all)', default = "all", type=str)
     parser.add_argument("--region", '-r', help='region (default eu)', default = "eu")
-    parser.add_argument("--worker", '-w', help='worker name', default = "worker-02")
+    parser.add_argument("--worker", '-w', help='worker name', default = "wr02")
     parser.add_argument("--address", '-a', help='wallet address', default="3FkaDHat56SfuJaueRo9CCUM1rCGMK2coQ")
     parser.add_argument("--threshold", '-t', help='switching threshold ratio (default: 0.02)', default=0.02, type=float)
     parser.add_argument("--benchmark", '-b', help='benchmark file (default: benchmark.json)', default = "benchmark.json")

@@ -76,6 +76,7 @@ class ExcavatorApi:
     def state_set(self, device_uuid, algorithm, region, wallet, name):
         params = {}
         params["btc_address"] = wallet + "." + name + ":x"
+        #params["btc_address"] = "34HKWdzLxWBduUfJE9JxaFhoXnfC6gmePG.test2:x"
         params["stratum_url"] = self.get_stratum(region)
         params["devices"] = [
             {
@@ -84,6 +85,8 @@ class ExcavatorApi:
                 "params": []
             }
         ]
+        self.do_excavator_command('state.set', params)
+
 
 
     def is_alive(self):
@@ -95,7 +98,7 @@ class ExcavatorApi:
             return True
 
     def get_stratum(self, region):
-        return ['nhmp.%s.nicehash.com:%s' % (region, 3200)]
+        return 'nhmp.%s.nicehash.com:%s' % (region, 3200)
 
     def do_excavator_command(self, method, params = []):
         """Sends a command to excavator, returns the JSON-encoded response.
