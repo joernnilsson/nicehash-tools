@@ -39,7 +39,15 @@ class Device:
         self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUGraphicsClockOffset[3]='+str(int(offset))])
 
     def get_clock_offset(self):
-        offset = int(self.nvidia_settings_get('GPUGraphicsClockOffset[2]'))
+        offset = int(self.nvidia_settings_get('GPUGraphicsClockOffset[3]'))
+        return offset
+
+    def set_memory_offset(self, offset):
+        self.set_performance_mode()
+        self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUMemoryTransferRateOffset[3]='+str(int(offset))])
+
+    def get_memory_offset(self):
+        offset = int(self.nvidia_settings_get('GPUMemoryTransferRateOffset[2]'))
         return offset
 
     def get_temp(self):

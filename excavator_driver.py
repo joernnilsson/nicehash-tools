@@ -155,6 +155,9 @@ class Driver:
             if spec["gpu_clock"]:
                 self.devices_oc[device].set_clock_offset(spec["gpu_clock"])
                 logging.info("overclocking device %i, gpu_clock: %s" % (device, str(spec["gpu_clock"])))
+            if spec["mem_clock"]:
+                self.devices_oc[device].set_memory_offset(spec["mem_clock"])
+                logging.info("overclocking device %i, mem_clock: %s" % (device, str(spec["mem_clock"])))
             if spec["power"]:
                 try:
                     self.devices_oc[device].set_power_offset(spec["power"])
@@ -169,6 +172,8 @@ class Driver:
             spec = self.devices_oc_spec[device]
             if spec["gpu_clock"]:
                 self.devices_oc[device].set_clock_offset(0)
+            if spec["mem_clock"]:
+                self.devices_oc[device].set_memory_offset(0)
             if spec["power"]:
                 try:
                     self.devices_oc[device].set_power_offset(0)
