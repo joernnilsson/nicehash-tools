@@ -70,7 +70,10 @@ class WsServer(threading.Thread):
         self.clients = [x for x in self.clients if x["id"] != client["id"]]
 
     def publish(self, msg):
-        self.server.send_message_to_all(json.dumps(msg))
+        try:
+            self.server.send_message_to_all(json.dumps(msg))
+        except ConnectionResetError as e:
+            pass
 
     def received(self, client, server, msg):
         if self.msg_cb:
@@ -186,6 +189,7 @@ class MinerMonitor():
                 e = self.queue.get(block=True, timeout=0.1)
             except queue.Empty:
                 continue
+            
             self.input(e[0], e[1])
 
     def ws_connected(self, client):
