@@ -56,9 +56,17 @@ class Device:
     def get_power_limit(self):
         return self.get("gpu/power_readings/power_limit", tp = "W")
 
+    def get_uuid(self):
+        return self.get("gpu/uuid")
+
     def nvidia_settings_get(self, var):
         proc = self.nvidia_settings(["-t", '-q', '[gpu:' + str(self.device_number) + ']/' + var])
-        return proc.stdout.decode("utf-8", errors='ignore')
+
+        res = proc.stdout.decode("utf-8", errors='ignore')
+        if len(res) == 0:
+            raise NotSupportedException("Not supported: %s" % (var))
+        
+        return res
 
     def set_performance_mode(self):
         self.nvidia_settings(["-a", '[gpu:'+str(self.device_number)+']/GPUPowerMizerMode=1'])
@@ -101,7 +109,7 @@ class Device:
     def get(self, key, tp = None):
         val = self.data.find(key).text
         if(val == "N/A"):
-            raise Exception("Key %s is not available" % (key))
+            raise NotSupportedException("Not supported: %s" % (key))
 
         if(tp == "W"):
             m = re.match(r"([0-9]*\.[0-9]+|[0-9]+) W", val)
@@ -138,6 +146,9 @@ class Device:
 
         # Parse xml
         return ET.fromstring(parsable)
+
+class NotSupportedException(Exception):
+    pass
 
 
 

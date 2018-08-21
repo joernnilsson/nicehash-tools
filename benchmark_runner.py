@@ -7,6 +7,7 @@ import subprocess
 
 import excavator_benchmark
 import overclock
+import benchmark_db
 
 
 class Benchmark():
@@ -20,6 +21,7 @@ class Benchmark():
         self.mem = mem
         self.result = []
 
+        self.dev_uuid = "uuid"
         self.dev_power = None
         self.dev_clock = None
         self.dev_mem = None
@@ -68,6 +70,8 @@ def run_benchmark(task: Benchmark):
     dev = overclock.Device(task.device)
     dev.refresh()
 
+    task.dev_uuid = dev.get_uuid()
+
     if(task.clock != None):
         dev.set_clock_offset(task.clock)
 
@@ -80,12 +84,21 @@ def run_benchmark(task: Benchmark):
     task.result = excavator_benchmark.benchmark(task.executable, task.device, task.algo, task.benchmark_length)
     
     dev.refresh()
-    if(task.clock != None):
+    try:
         task.dev_clock = dev.get_clock_offset()
-    if(task.power != None):
-        task.dev_power = dev.get_power_limit()
-    if(task.mem != None):
+    except overclock.NotSupportedException:
+        task.dev_clock = 0
+    
+    try:
         task.dev_mem = dev.get_memory_offset()
+    except overclock.NotSupportedException:
+        task.dev_mem = 0
+
+    try:
+        task.dev_power = dev.get_power_limit()
+    except overclock.NotSupportedException:
+        task.dev_power = 0
+
     task.dev_temp = dev.get_temp()
 
 
@@ -143,6 +156,7 @@ if(__name__ == "__main__"):
 
     parser.add_argument("--csv", '-s', help='output comma separated data file')
     parser.add_argument("--json", '-j', help='output json file suitable for excavator driver')
+    parser.add_argument("--db", '-b', help='output to directory db')
 
     args = parser.parse_args()
 
@@ -155,6 +169,10 @@ if(__name__ == "__main__"):
     tasks = generate_tasks(args.excavator_path, args.device, algos, args.length, clock_range, power_range, mem_range)
 
     logger.info("Running %d bechmarks, with estimated total execution time: %.1f min", len(tasks), float(len(tasks) * (args.length+4))/ 60.0)
+
+    db = None
+    if(args.db):
+        db = benchmark_db.BenchmarkDb(args.db)
 
     output = ""
     top = {}
@@ -169,7 +187,14 @@ if(__name__ == "__main__"):
             top[t.algo] = t.result[0] if len(t.result) == 1 else t.result
             
         progress = progress + 1
-        
+
+        if db:
+            if len(t.result) > 1:
+                raise Exception("Multi algo not supported by BenchmarkDb")
+
+            # TODO read miner and version
+            db.save(t.algo, t.dev_uuid, "excavator", "1.5.11", t.result[0], t.dev_power, t.dev_clock, t.dev_mem, True)
+
     if(args.csv):
         with open(args.csv, "w") as f:
             f.write(output)

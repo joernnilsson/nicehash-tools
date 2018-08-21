@@ -87,7 +87,9 @@ class ExcavatorApi:
         ]
         self.do_excavator_command('state.set', params)
 
-
+    def info(self):
+        res = self.do_excavator_command('info')
+        return res
 
     def is_alive(self):
         try:
