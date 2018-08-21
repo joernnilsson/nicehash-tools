@@ -72,7 +72,7 @@ class WsServer(threading.Thread):
     def publish(self, msg):
         try:
             self.server.send_message_to_all(json.dumps(msg))
-        except ConnectionResetError as e:
+        except (BrokenPipeError, ConnectionResetError) as e:
             pass
 
     def received(self, client, server, msg):
