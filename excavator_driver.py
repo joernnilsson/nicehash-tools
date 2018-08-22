@@ -21,6 +21,7 @@ import excavator_api
 import nicehash_api
 import overclock
 import ws_ipc
+import benchmark_db
 
 UPDATE_INTERVAL = 30
 SPEED_INTERVAL = 2
@@ -28,6 +29,7 @@ SPEED_INTERVAL = 2
 # TODO read from config file
 # TODO sync to nh update time
 # TODO oc auto tune
+# TODO Regulate power on high temps
 
 
 # OC Auto tune:
@@ -39,19 +41,21 @@ SPEED_INTERVAL = 2
 # - Verify excavator is fully dead before restaring
 
 
+
 class Driver:
 
-    def __init__(self, wallet, region, benchmarks, devices, name, oc_spec, switching_threshold, run_excavator, ipc_port, autostart):
+    def __init__(self, wallet, region, benchmarks, devices, name, oc_strat, oc_file, switching_threshold, run_excavator, ipc_port, autostart, db):
 
         self.wallet = wallet
         self.region = region
         self.benchmarks = benchmarks
         self.devices = devices
         self.name = name
-        self.oc_spec = oc_spec
+        self.oc_file = oc_file
         self.switching_threshold = switching_threshold
         self.run_excavator = run_excavator
         self.ipc_port = ipc_port
+        self.db = db
 
         self.state = Driver.State.INIT
         self.device_monitor = nvidia_smi.Monitor(data=["xidEvent", "temp"])
@@ -60,8 +64,6 @@ class Driver:
 
         # dict of device id -> overclocking device object
         self.devices_oc = {}
-        # dict of device id -> current overclocking settings
-        self.devices_oc_spec = {}
         # dict of device id -> settings
         self.device_settings = {}
 
@@ -70,18 +72,25 @@ class Driver:
         for d in self.devices:
             dev = Driver.DeviceSettings()
             dev.enabled = autostart
+            dev.oc_strategy = oc_strat
             self.device_settings[d] = dev
 
         self.excavator = excavator_api.ExcavatorApi()
 
         self.oc_config = None
 
-        if self.oc_spec is not None:
-            for d in devices:
-                self.devices_oc[d] = overclock.Device(d)
-                self.devices_oc[d].refresh()
+        for d in devices:
+            self.devices_oc[d] = overclock.Device(d)
+            self.devices_oc[d].refresh()
 
     class DeviceSettings:
+
+        class OcStrategy:
+            NONE = "none"
+            FILE = "file"
+            DB_BEST = "db_best"
+            DB_SEARCH = "db_search"
+
         def __init__(self):
             self.enabled = False
             self.best_algo = None
@@ -91,16 +100,240 @@ class Driver:
             self.uuid = ""
             self.running = False
 
+            self.oc_strategy = self.OcStrategy.NONE
+            self.oc_session = None
+
+    class OcSpec:
+        def __init__(self):
+            self.gpu_clock = None
+            self.mem_clock = None
+            self.power = None
+
+        def equals(self, other):
+            return self.gpu_clock == other.gpu_clock and self.mem_clock == other.mem_clock and self.power == other.power
+        
+        def keys(self):
+            return ["gpu_clock", "mem_clock", "power"]
+
+        def __str__(self):
+
+            spec = [("%s: %i" % (k, self.__getattribute__(k))) for k in self.keys() if self.__getattribute__(k) != None]
+            return "None" if len(spec) == 0 else ", ".join(spec)
+
+    class OcStrategy:
+        def __init__(self, device_uuid, algo):
+            self.device_uuid = device_uuid
+            self.algo = algo
+            
+        def get_spec(self):
+            pass
+        
+        def refresh(self):
+            pass
+    
+    class OcStrategyFile(OcStrategy):
+        def __init__(self, device_uuid, algo, filename):
+            Driver.OcStrategy.__init__(self, device_uuid, algo)
+            self.filename = filename
+            self.oc_config = None
+
+            self.refresh()
+        
+        def refresh(self):
+            self.oc_config = json.load(open(self.filename))
+        
+        def get_spec(self):
+            spec = Driver.OcSpec()
+
+            paths = [
+                [self.device_uuid, self.algo], 
+                [self.device_uuid, "default"], 
+                ["default", self.algo], 
+                ["default", "default"]
+            ]
+
+            for e in spec.keys():
+                for p in paths:
+                    if p[0] in self.oc_config and p[1] in self.oc_config[p[0]] and e in self.oc_config[p[0]][p[1]]:
+                        spec.__setattr__(e, self.oc_config[p[0]][p[1]][e])
+                        break
+
+            return spec
+
+    class OcSession:
+        class State:
+            INACTIVE = "inactive"
+            WARMUP_1 = "warmup_1"
+            WARMUP_2 = "warmup_2"
+            ACTIVE = "active"
+            FINISHING = "finishing"
+        
+        TIME_WARMUP_1 = 1
+        TIME_WARMUP_2 = 1
+        BENCHMARK_MIN_LENGTH = 2
+
+        def __init__(self, strategy, dev, database):
+            
+            self.strategy = strategy
+            self.dev = dev
+            self.applied_oc = Driver.OcSpec()
+            self.database = database
+
+            self.avg_full = 0
+            self.benchmark_result = {
+                "length": 0,
+                "avg_full": 0,
+                "current_speed": 0
+            }
+
+            self._set_state(self.State.INACTIVE)
+            self.reset_timer()
+        
+        def end(self):
+            self.set_finishing()
+
+        def reset_timer(self):
+            self.state_time_start = time.time()
+            self.state_time_last = self.state_time_start
+
+        def _set_state(self, state):
+            self.state = state
+            logging.debug("[%s] Oc session state: %s", self.strategy.device_uuid, state)
+
+        def set_warmup_1(self):
+            self._set_state(self.State.WARMUP_1)
+            self.reset_timer()
+
+        def set_warmup_2(self):
+            self._set_state(self.State.WARMUP_2)
+            self.reset_timer()
+            self.overclock()
+        
+        def set_active(self):
+            self._set_state(self.State.ACTIVE)
+            self.reset_timer()
+            # Reset speed measurement?
+
+        def set_finishing(self):
+
+            # Write to db if state is ACTIVE
+            dev_power = 0
+            dev_clock = 0
+            dev_power = 0
+            
+            try:
+                dev_clock = self.dev.get_clock_offset()
+            except overclock.NotSupportedException:
+                dev_clock = 0
+            
+            try:
+                dev_mem = self.dev.get_memory_offset()
+            except overclock.NotSupportedException:
+                dev_mem = 0
+
+            try:
+                dev_power = self.dev.get_power_offset()
+            except overclock.NotSupportedException:
+                dev_power = 0
+
+            if self.database and \
+                    self.state == self.State.ACTIVE and \
+                    self.benchmark_result["length"] > self.BENCHMARK_MIN_LENGTH:
+                logging.debug("Saving benchmark result: %s", str(self.benchmark_result))
+                self.database.save(self.strategy.algo, 
+                    self.strategy.device_uuid, 
+                    "excavator", "1.5.11", 
+                    self.benchmark_result["avg_full"], 
+                    dev_power, 
+                    dev_clock, 
+                    dev_mem, 
+                    True, 
+                    self.benchmark_result["length"])
+
+            self._set_state(self.State.FINISHING)
+            self.reset_timer()
+            self.reset_overclock()
+
+        def get_speeds(self):
+            return self.benchmark_result["length"] > 10
+
+        def loop_active(self, current_speed):
+            now = time.time()
+            time_prev = self.state_time_last - self.state_time_start
+            time_cuml = now - self.state_time_start
+            self.state_time_last = now
+
+            self.avg_full = (self.avg_full * time_prev + current_speed) / time_cuml
+
+            self.benchmark_result = {
+                "length": time_cuml,
+                "avg_full": self.avg_full,
+                "current_speed": current_speed
+            }
+
+        def loop(self, current_speed):
+
+            if self.state == self.State.INACTIVE:
+                if time.time() - self.state_time_start > 0:
+                    self.set_warmup_1()
+            if self.state == self.State.WARMUP_1:
+                if time.time() - self.state_time_start > self.TIME_WARMUP_1:
+                    self.set_warmup_2()
+            if self.state == self.State.WARMUP_2:
+                if time.time() - self.state_time_start > self.TIME_WARMUP_2:
+                    self.set_active()
+            if self.state == self.State.ACTIVE:
+                self.loop_active(current_speed)
+
+        def overclock(self):
+            self.strategy.refresh()
+            spec = self.strategy.get_spec()
+
+            logging.info("[%s] Applying Oc: %s", self.strategy.device_uuid, spec)
+
+            if not self.applied_oc.equals(spec):
+
+                if spec.gpu_clock:
+                    self.dev.set_clock_offset(spec.gpu_clock)
+                    logging.info("overclocking device %i, gpu_clock: %s" % (self.dev.device_number, str(spec.gpu_clock)))
+                if spec.mem_clock:
+                    self.dev.set_memory_offset(spec.mem_clock)
+                    logging.info("overclocking device %i, mem_clock: %s" % (self.dev.device_number, str(spec.mem_clock)))
+                if spec.power:
+                    try:
+                        self.dev.set_power_offset(spec.power)
+                        logging.info("overclocking device %i, power: %s" % (self.dev.device_number, str(spec.power)))
+                    except:
+                        pass
+                self.applied_oc = spec
+
+        def reset_overclock(self):
+            logging.info("[%s] Resetting Oc", self.strategy.device_uuid)
+
+            # Reset overclocking
+            if self.applied_oc.gpu_clock:
+                self.dev.set_clock_offset(0)
+                logging.info("overclocking device %i, gpu_clock: %s" % (self.dev.device_number, str(0)))
+            if self.applied_oc.mem_clock:
+                self.dev.set_memory_offset(0)
+                logging.info("overclocking device %i, mem_clock: %s" % (self.dev.device_number, str(0)))
+            if self.applied_oc.power:
+                try:
+                    self.dev.set_power_offset(0)
+                    logging.info("overclocking device %i, power: %s" % (self.dev.device_number, str(0)))
+                except:
+                    pass
+            self.dev.unset_performance_mode()
+
+            self.applied_oc = Driver.OcSpec()
+
+
     class State:
         INIT = 0
         RUNNING = 1
         CRASHING = 2
         RESTARTING = 3
 
-
-    def reaload_oc(self):
-        if self.oc_spec is not None:
-            self.oc_config = json.load(open(self.oc_spec))
 
     def get_device_oc(self, device, algo):  
         uuid = nvidia_smi.device(device)["uuid"]
@@ -148,40 +381,6 @@ class Driver:
 
         return dict([(algo, pay_benched(algo)) for algo in bms.keys()])
 
-    def overclock(self, device, algo):
-        if self.oc_spec is not None:
-            spec = self.get_device_oc(device, algo)
-            
-            if spec["gpu_clock"]:
-                self.devices_oc[device].set_clock_offset(spec["gpu_clock"])
-                logging.info("overclocking device %i, gpu_clock: %s" % (device, str(spec["gpu_clock"])))
-            if spec["mem_clock"]:
-                self.devices_oc[device].set_memory_offset(spec["mem_clock"])
-                logging.info("overclocking device %i, mem_clock: %s" % (device, str(spec["mem_clock"])))
-            if spec["power"]:
-                try:
-                    self.devices_oc[device].set_power_offset(spec["power"])
-                    logging.info("overclocking device %i, power: %s" % (device, str(spec["power"])))
-                except:
-                    pass
-            self.devices_oc_spec[device] = spec
-
-    def reset_overclock(self, device):
-        # Reset overclocking
-        if self.oc_spec is not None and self.devices_oc_spec[device] is not None:
-            spec = self.devices_oc_spec[device]
-            if spec["gpu_clock"]:
-                self.devices_oc[device].set_clock_offset(0)
-            if spec["mem_clock"]:
-                self.devices_oc[device].set_memory_offset(0)
-            if spec["power"]:
-                try:
-                    self.devices_oc[device].set_power_offset(0)
-                except:
-                    pass
-            self.devices_oc[device].unset_performance_mode()
-        
-            self.devices_oc_spec[device] = None
 
     def dispatch_device(self, device, algo):
         ds = self.device_settings[device]
@@ -189,7 +388,9 @@ class Driver:
 
         self.excavator.state_set(ds.uuid, algo, self.region, self.wallet, self.name)
 
-        self.overclock(device, algo)
+        if ds.oc_strategy == Driver.DeviceSettings.OcStrategy.FILE:
+            strategy = self.OcStrategyFile(ds.uuid, algo, self.oc_file)
+            ds.oc_session = Driver.OcSession(strategy, self.devices_oc[device], self.db)
 
         ds.running = True
 
@@ -197,8 +398,11 @@ class Driver:
         ds = self.device_settings[device]
         ds.current_algo = None
 
-        # Reset overclocking
-        self.reset_overclock(device)
+        if ds.oc_session:
+            ds.oc_session.end()
+            result = ds.oc_session.get_speeds()
+            logging.debug('Benchmark results: %s', str(result))
+            ds.oc_session = None
 
         self.excavator.state_set(ds.uuid, "", self.region, self.wallet, self.name)
 
@@ -219,8 +423,8 @@ class Driver:
         
         # Reset overclocking
         for device, ds in self.device_settings.items():
-            if ds.running:
-                self.reset_overclock(device)
+            if ds.running and ds.oc_session:
+                ds.oc_session.end()
 
         try:
             self.excavator.stop()
@@ -268,7 +472,7 @@ class Driver:
             try:
                 event = self.device_monitor.get_event(block=False)
                 #event = self.device_monitor.get_event(block=True, timeout=0.1)
-                logging.debug("Device event: "+str(event))
+                #logging.debug("Device event: "+str(event))
 
                 if(event["type"] == "xidEvent"):
                     if(event["value"] == 43):
@@ -321,6 +525,10 @@ class Driver:
                 for device, ds in self.device_settings.items():
                     speeds = self.excavator.device_speeds(device)
                     ds.current_speed = speeds[ds.current_algo] if ds.current_algo in speeds else 0.0
+                    
+                    if ds.oc_session:
+                        ds.oc_session.loop(ds.current_speed)
+
                     ds.paying = self.nicehash_mbtc_algo_per_day(ds.current_algo, ds.current_speed)
                     self.ipc.publish({
                             "type": "device.algo",
@@ -336,8 +544,6 @@ class Driver:
             # Algorithm switching
             if self.state == Driver.State.RUNNING and now > last_nh_update + UPDATE_INTERVAL:
                 last_nh_update = now
-
-                self.reaload_oc()
 
                 if not self.excavator.is_alive():
                     logging.error("Excavator is not alive, exiting")
@@ -355,7 +561,6 @@ class Driver:
                 except (json.decoder.JSONDecodeError, KeyError):
                     logging.warning('failed to parse NiceHash stats')
                 else:
-                    self.reaload_oc()
                     for device in self.devices:
                         payrates = self.nicehash_mbtc_per_day(device, self.paying_current)
 
@@ -424,7 +629,7 @@ def parse_devices(spec):
 
 
 def read_benchmarks(filename, devices):
-    # TODO Check if file exists
+
     data = json.load(open(filename))
 
     bms = {}
@@ -444,12 +649,15 @@ if __name__ == '__main__':
     parser.add_argument("--address", '-a', help='wallet address', default="3FkaDHat56SfuJaueRo9CCUM1rCGMK2coQ")
     parser.add_argument("--threshold", '-t', help='switching threshold ratio (default: 0.02)', default=0.02, type=float)
     parser.add_argument("--benchmark", '-b', help='benchmark file (default: benchmark.json)', default = "benchmark.json")
-    parser.add_argument("--overclock", "-o", help="file containing overclocking specs")
     parser.add_argument("--auto-tune-devices", "-u", help='enable overclocking auto tune for given devices', type=str)
     parser.add_argument("--excavator", "-e", help='launch excavator automatically', action='store_true')
     parser.add_argument("--ipc-port", "-p", help='port to expose ipc interface on', type=int, default=8082)
     parser.add_argument("--debug", "-g", help='enablbe debug logging', action='store_true')
     parser.add_argument("--autostart", "-m", help='autostart mining', action='store_true')
+    parser.add_argument("--db", help='benchmark db directory name')
+
+    parser.add_argument("--overclock", "-o", help="initial overclocing strategy [file, db_best, db_search]")
+    parser.add_argument("--overclock-file", "-f", help="overclocing spec file for file strategy")
 
     args = parser.parse_args()
 
@@ -465,15 +673,25 @@ if __name__ == '__main__':
 
     devices = parse_devices(args.devices)
     benchmarks = read_benchmarks(args.benchmark, devices)
+    db = benchmark_db.BenchmarkDb(args.db) if args.db else None
 
     def sigint_handler(signum, frame):
         driver.cleanup()
         sys.exit(0)
 
-    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, args.overclock, args.threshold, args.excavator, args.ipc_port, args.autostart)
-    signal.signal(signal.SIGINT, sigint_handler)
+    oc_strategy = Driver.DeviceSettings.OcStrategy.NONE
+    if args.overclock == "file":
+        oc_strategy = Driver.DeviceSettings.OcStrategy.FILE
+        if not args.overclock_file:
+            parser.error("--overclock 'file' requires --overclock-file to be specified")
 
-    driver.reaload_oc()
+    if args.overclock == "db_best":
+        oc_strategy = Driver.DeviceSettings.OcStrategy.DB_BEST
+    if args.overclock == "db_search":
+        oc_strategy = Driver.DeviceSettings.OcStrategy.DB_SEARCH
+
+    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, oc_strategy, args.overclock_file, args.threshold, args.excavator, args.ipc_port, args.autostart, db)
+    signal.signal(signal.SIGINT, sigint_handler)
 
     driver.run()
 
