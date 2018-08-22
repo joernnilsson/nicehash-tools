@@ -168,16 +168,17 @@ class Driver:
             ACTIVE = "active"
             FINISHING = "finishing"
         
-        TIME_WARMUP_1 = 1
-        TIME_WARMUP_2 = 1
-        BENCHMARK_MIN_LENGTH = 2
+        TIME_WARMUP_1 = 10
+        TIME_WARMUP_2 = 20
+        BENCHMARK_MIN_LENGTH = 100
 
-        def __init__(self, strategy, dev, database):
+        def __init__(self, strategy, dev, database, excavator):
             
             self.strategy = strategy
             self.dev = dev
             self.applied_oc = Driver.OcSpec()
             self.database = database
+            self.excavator = excavator
 
             self.avg_full = 0
             self.benchmark_result = {
@@ -198,7 +199,7 @@ class Driver:
 
         def _set_state(self, state):
             self.state = state
-            logging.debug("[%s] Oc session state: %s", self.strategy.device_uuid, state)
+            logging.info("[%s] Oc session state: %s", self.strategy.device_uuid, state)
 
         def set_warmup_1(self):
             self._set_state(self.State.WARMUP_1)
@@ -211,6 +212,7 @@ class Driver:
         
         def set_active(self):
             self._set_state(self.State.ACTIVE)
+            self.excavator.device_speed_reset(self.strategy.device_uuid)
             self.reset_timer()
             # Reset speed measurement?
 
@@ -261,9 +263,10 @@ class Driver:
             now = time.time()
             time_prev = self.state_time_last - self.state_time_start
             time_cuml = now - self.state_time_start
+            time_step = now - self.state_time_last
             self.state_time_last = now
 
-            self.avg_full = (self.avg_full * time_prev + current_speed) / time_cuml
+            self.avg_full = (self.avg_full * time_prev + current_speed * time_step) / time_cuml
 
             self.benchmark_result = {
                 "length": time_cuml,
@@ -390,7 +393,7 @@ class Driver:
 
         if ds.oc_strategy == Driver.DeviceSettings.OcStrategy.FILE:
             strategy = self.OcStrategyFile(ds.uuid, algo, self.oc_file)
-            ds.oc_session = Driver.OcSession(strategy, self.devices_oc[device], self.db)
+            ds.oc_session = Driver.OcSession(strategy, self.devices_oc[device], self.db, self.excavator)
 
         ds.running = True
 

@@ -39,6 +39,9 @@ class ExcavatorApi:
     def worker_free(self, worker_id):
         self.do_excavator_command('worker.free', [str(worker_id)])
 
+    def device_speed_reset(self, device_uuid):
+        self.do_excavator_command('worker.reset.device', [str(device_uuid)])
+
     def algo_add(self, algo):
         self.do_excavator_command('algorithm.add', [algo])
 
