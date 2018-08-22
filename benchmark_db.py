@@ -29,11 +29,11 @@ class BenchmarkDb():
         filepath = self.directory + "/" + filename
         return filepath
 
-    def save(self, algo, gpu_uuid, miner, miner_version, hashrate, power_offset, gpu_clock_offset, mem_clock_offset, success):
+    def save(self, algo, gpu_uuid, miner, miner_version, hashrate, power_offset, gpu_clock_offset, mem_clock_offset, success, length):
         
         filepath = self._filepath(algo, gpu_uuid, miner, miner_version)
         with open(filepath, "a+") as fd:
-            csv = ", ".join([str(x) for x in [1 if success else 0, hashrate, power_offset, gpu_clock_offset, mem_clock_offset]])
+            csv = ", ".join([str(x) for x in [1 if success else 0, hashrate, power_offset, gpu_clock_offset, mem_clock_offset, length]])
             self.logger.debug("Writing: %s", csv)
             fd.write(csv + "\n")
 

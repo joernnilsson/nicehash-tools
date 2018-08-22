@@ -56,6 +56,11 @@ class Device:
     def get_power_limit(self):
         return self.get("gpu/power_readings/power_limit", tp = "W")
 
+    def get_power_offset(self):
+        limit = self.get_power_limit()
+        limit_default = self.get("gpu/power_readings/default_power_limit", tp = "W")
+        return limit - limit_default
+
     def get_uuid(self):
         return self.get("gpu/uuid")
 

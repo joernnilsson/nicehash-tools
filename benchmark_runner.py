@@ -95,7 +95,7 @@ def run_benchmark(task: Benchmark):
         task.dev_mem = 0
 
     try:
-        task.dev_power = dev.get_power_limit()
+        task.dev_power = dev.get_power_offset()
     except overclock.NotSupportedException:
         task.dev_power = 0
 
@@ -193,7 +193,7 @@ if(__name__ == "__main__"):
                 raise Exception("Multi algo not supported by BenchmarkDb")
 
             # TODO read miner and version
-            db.save(t.algo, t.dev_uuid, "excavator", "1.5.11", t.result[0], t.dev_power, t.dev_clock, t.dev_mem, True)
+            db.save(t.algo, t.dev_uuid, "excavator", "1.5.11", t.result[0], t.dev_power, t.dev_clock, t.dev_mem, True, t.benchmark_length)
 
     if(args.csv):
         with open(args.csv, "w") as f:
