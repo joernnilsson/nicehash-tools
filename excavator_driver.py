@@ -492,7 +492,7 @@ class Driver:
         ds = self.device_settings[device]
 
         self.homie_devices[ds.uuid].getProperty("id").update(device)
-        self.homie_devices[ds.uuid].getProperty("algo").supdateend("" if ds.current_algo is None else ds.current_algo)
+        self.homie_devices[ds.uuid].getProperty("algo").update("" if ds.current_algo is None else ds.current_algo)
         self.homie_devices[ds.uuid].getProperty("speed").update(ds.current_speed)
         self.homie_devices[ds.uuid].getProperty("paying").update(ds.paying)
         self.homie_devices[ds.uuid].getProperty("enabled").update("true" if ds.enabled else "false")
