@@ -459,15 +459,15 @@ class Driver:
     def homie_setup(self):
 
         self.homie.setFirmware("miner", "1.0.0")
-        self.homie_cooling.addProperty("water-cold", name="Water cold", unit="°C", datatype="float")
-        self.homie_cooling.addProperty("water-hot", name="Water hot", unit="°C", datatype="float")
-        self.homie_cooling.addProperty("air-1", name="Air 1", unit="°C", datatype="float")
-        self.homie_cooling.addProperty("air-2", name="Air 2", unit="°C", datatype="float")
+        self.homie_cooling.addProperty("water-cold", name="Water cold", unit="ºC", datatype="float")
+        self.homie_cooling.addProperty("water-hot", name="Water hot", unit="ºC", datatype="float")
+        self.homie_cooling.addProperty("air-1", name="Air 1", unit="ºC", datatype="float")
+        self.homie_cooling.addProperty("air-2", name="Air 2", unit="ºC", datatype="float")
 
         for ds in self.device_settings.values():
             name = "GPU "+str(ds.id)
             node = self.homie.addNode(ds.uuid.lower(), name, "gpu")
-            node.addProperty("temperature", name=name+" Temperature", unit="°C", datatype="float")
+            node.addProperty("temperature", name=name+" Temperature", unit="ºC", datatype="float")
             node.addProperty("id", name=name+" Id", datatype="integer")
             node.addProperty("algo", name=name+" Algorithm", datatype="string")
             node.addProperty("speed", name=name+" Speed", unit="H/s", datatype="float")
