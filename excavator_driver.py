@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# pip3 install --user git+https://github.com/bodiroga/homie-python/tree/homie-v3.0.0
+
 import json
 import logging
 import signal
@@ -15,7 +17,6 @@ from pprint import pprint
 from time import sleep
 import urllib.error
 import urllib.request
-import paho.mqtt.client as mqtt
 import homie
 
 import nvidia_smi
@@ -64,12 +65,27 @@ class Driver:
         self.excavator_proc = None
         self.ipc = None
 
-        self.mqtt = mqtt.Client("excavator_driver")
+        # Mqtt
         self.mqtt_host = mqtt_host
-        self.mqtt.on_connect = self.mqtt_connected
-        self.mqtt.on_disconnect = self.mqtt_disconnected
-        self.mqtt.on_message = self.mqtt_message_received
-        self.mqtt_topic_prefix = "miner-01"
+
+        # Mqtt homie
+        self.homie = None
+        if self.mqtt_host:
+            homie_config = {
+                "HOST": mqtt_host,
+                "PORT": 1883,
+                "KEEPALIVE": 10,
+                "USERNAME": "",
+                "PASSWORD": "",
+                "CA_CERTS": "",
+                "DEVICE_NAME": "miner-01",
+                "DEVICE_ID": "miner01",
+                "TOPIC": "homie"
+            }
+            self.homie = homie.Device(homie_config)
+            logger.debug("a")
+            self.homie_cooling = self.homie.addNode("cooing", "Cooling system", "temperature")
+            self.homie_devices = {}
 
 
         # dict of device id -> overclocking device object
@@ -81,6 +97,7 @@ class Driver:
 
         for d in self.devices:
             dev = Driver.DeviceSettings()
+            dev.id = d
             dev.enabled = autostart
             dev.oc_strategy = oc_strat
             self.device_settings[d] = dev
@@ -102,6 +119,7 @@ class Driver:
             DB_SEARCH = "db_search"
 
         def __init__(self):
+            self.id = 0
             self.enabled = False
             self.best_algo = None
             self.current_algo = None
@@ -399,12 +417,17 @@ class Driver:
 
 
     def cleanup(self):
-        logging.info('Cleaning up!')
+        logging.info('Cleaning up')
         self.excavator.is_alive()
 
         self.ipc.stop()
 
-        self.mqtt.loop_stop()
+        logging.info('Stopping mqtt')
+        if self.homie is not None:
+            #pass
+            #del self.homie
+            self.homie._exitus()
+        logging.info('Stopped mqtt')
 
         try:
             self.device_monitor.stop()
@@ -430,56 +453,53 @@ class Driver:
             #self.excavator_proc.kill()
             #self.excavator_proc.wait(timeout=1.0)
 
-    def mqtt_topic(self, path):
-        if not isinstance(path, list):
-            path = [path]
-        return "/".join([self.mqtt_topic_prefix] + path)
+    def get_device_settings(self, uuid):
+        return self.device_settings[index(self.device_settings, lambda item: item.uuid == uuid)]
 
+    def homie_setup(self):
 
-    def mqtt_publish(self, path, value, retained = False):
-        topic = self.mqtt_topic(path)
-        self.mqtt.publish(topic, str(value), retain=True)
-        logging.debug("publishing to %s: %s", topic, str(value))
+        self.homie.setFirmware("miner", "1.0.0")
+        self.homie_cooling.addProperty("water-cold", name="Water cold", unit="C", datatype="float")
+        self.homie_cooling.addProperty("water-hot", name="Water hot", unit="C", datatype="float")
+        self.homie_cooling.addProperty("air-1", name="Air 1", unit="C", datatype="float")
+        self.homie_cooling.addProperty("air-2", name="Air 2", unit="C", datatype="float")
+
+        for ds in self.device_settings.values():
+            name = "GPU "+str(ds.id)
+            node = self.homie.addNode(ds.uuid.lower(), name, "gpu")
+            node.addProperty("temperature", name=name+" Temperature", unit="C", datatype="float")
+            node.addProperty("id", name=name+" Id", datatype="integer")
+            node.addProperty("algo", name=name+" Algorithm", datatype="string")
+            node.addProperty("speed", name=name+" Speed", unit="H/s", datatype="float")
+            node.addProperty("paying", name=name+" Paying", unit="mBTC/d", datatype="float")
+            node.addProperty("enabled", name=name+" Enabled", datatype="boolean").settable(lambda property, value: self.homie_enable_device(ds.uuid, value))
+            self.homie_devices[ds.uuid] = node
+
+        self.homie.setup()
+
+    def homie_enable_device(self, uuid, msg):
+        ds = self.get_device_settings(uuid)
+        payload = msg.payload.decode("UTF-8").lower()
+        logging.debug("Got message for %s: %s", uuid, payload)
+        if payload == "true":
+            ds.enabled = True
+        elif payload == "false":
+            ds.enabled = False
+        else:
+            logging.error("Received unrecognized payload on %s: %s", msg.topic, payload)
 
     def publish_device(self, device):
         ds = self.device_settings[device]
-        self.mqtt_publish([ds.uuid, "id"], device)
-        self.mqtt_publish([ds.uuid, "algo"], "" if ds.current_algo is None else ds.current_algo)
-        self.mqtt_publish([ds.uuid, "speed"], ds.current_speed)
-        self.mqtt_publish([ds.uuid, "paying"], ds.paying)
-        self.mqtt_publish([ds.uuid, "enabled"], "true" if ds.enabled else "false")
+
+        self.homie_devices[ds.uuid].getProperty("id").update(device)
+        self.homie_devices[ds.uuid].getProperty("algo").supdateend("" if ds.current_algo is None else ds.current_algo)
+        self.homie_devices[ds.uuid].getProperty("speed").update(ds.current_speed)
+        self.homie_devices[ds.uuid].getProperty("paying").update(ds.paying)
+        self.homie_devices[ds.uuid].getProperty("enabled").update("true" if ds.enabled else "false")
 
     def publish_devices(self):
         for device, ds in self.device_settings.items():          
             self.publish_device(device)
-
-    def mqtt_connected(self, client, userdata, flags, rc):
-        logging.info("Connected to mqtt server: %s", "NA")
-
-        for ds in self.device_settings.values():
-            self.mqtt.subscribe(self.mqtt_topic([ds.uuid, "action", "enable"]))
-
-    def mqtt_disconnected(self, client, userdata, rc):
-        logging.info("Disconnected from mqtt server")
-
-    def mqtt_message_received(self, client, userdata, message):
-        logging.info("Got message on %s: %s", message.topic, message.payload)
-        parts = message.topic.split("/")
-
-        payload = message.payload.decode("utf-8")
-
-
-        for device, ds in self.device_settings.items():
-
-            if parts[1] == ds.uuid:
-                if parts[2] ==  "action" and parts[3] == "enable":
-                    if payload == "true":
-                        self.device_settings[device].enabled = True
-                    elif payload == "false":
-                        self.device_settings[device].enabled = False
-                    else:
-                        logging.error("Received unrecognized payload on %s: %s", message.topic, payload)
-                break
 
     def run(self):
 
@@ -491,14 +511,9 @@ class Driver:
         for device, ds in self.device_settings.items():
             ds.uuid = nvidia_smi.device(device)["uuid"]
 
-        # Start mqtt client
-        # TODO add auth
+        # Homie setup
         if self.mqtt_host:
-            self.mqtt.connect(self.mqtt_host)
-            self.mqtt.loop_start()
-        
-        # Publish enabled devices
-        self.mqtt_publish("devices", ",".join(x.uuid for x in self.device_settings.values()), True)
+            self.homie_setup()
 
         # Start excavator
         if self.run_excavator:
