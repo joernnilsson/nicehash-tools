@@ -46,7 +46,7 @@ SPEED_INTERVAL = 2
 
 class Driver:
 
-    def __init__(self, wallet, region, benchmarks, devices, name, oc_strat, oc_file, switching_threshold, run_excavator, ipc_port, autostart, db):
+    def __init__(self, wallet, region, benchmarks, devices, name, oc_strat, oc_file, switching_threshold, run_excavator, ipc_port, autostart, db, mqtt_host):
 
         self.wallet = wallet
         self.region = region
@@ -65,6 +65,7 @@ class Driver:
         self.ipc = None
 
         self.mqtt = mqtt.Client("excavator_driver")
+        self.mqtt_host = mqtt_host
         self.mqtt.on_connect = self.mqtt_connected
         self.mqtt.on_disconnect = self.mqtt_disconnected
         self.mqtt.on_message = self.mqtt_message_received
@@ -491,9 +492,10 @@ class Driver:
             ds.uuid = nvidia_smi.device(device)["uuid"]
 
         # Start mqtt client
-        # TODO add parameters and auth
-        self.mqtt.loop_start()
-        self.mqtt.connect("localhost")
+        # TODO add auth
+        if self.mqtt_host:
+            self.mqtt.connect(self.mqtt_host)
+            self.mqtt.loop_start()
         
         # Publish enabled devices
         self.mqtt_publish("devices", ",".join(x.uuid for x in self.device_settings.values()), True)
@@ -709,6 +711,7 @@ if __name__ == '__main__':
     parser.add_argument("--debug", "-g", help='enablbe debug logging', action='store_true')
     parser.add_argument("--autostart", "-m", help='autostart mining', action='store_true')
     parser.add_argument("--db", help='benchmark db directory name')
+    parser.add_argument("--mqtt-host", help='mqtt hostname')
 
     parser.add_argument("--overclock", "-o", help="initial overclocing strategy [file, db_best, db_search]")
     parser.add_argument("--overclock-file", "-f", help="overclocing spec file for file strategy")
@@ -744,7 +747,7 @@ if __name__ == '__main__':
     if args.overclock == "db_search":
         oc_strategy = Driver.DeviceSettings.OcStrategy.DB_SEARCH
 
-    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, oc_strategy, args.overclock_file, args.threshold, args.excavator, args.ipc_port, args.autostart, db)
+    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, oc_strategy, args.overclock_file, args.threshold, args.excavator, args.ipc_port, args.autostart, db, args.mqtt_host)
     signal.signal(signal.SIGINT, sigint_handler)
 
     driver.run()
