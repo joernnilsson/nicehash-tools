@@ -506,9 +506,9 @@ class Driver:
         hd.getProperty("enabled").update("true" if ds.enabled else "false")
 
         if(ds.oc_session):
-            hd.getProperty("oc-gpu").update(ds.oc_session.gpu_clock)
-            hd.getProperty("oc-mem").update(ds.oc_session.mem_clock)
-            hd.getProperty("oc-mem").update(ds.oc_session.mem_clock)
+            hd.getProperty("oc-gpu").update(ds.oc_session.applied_oc.gpu_clock)
+            hd.getProperty("oc-mem").update(ds.oc_session.applied_oc.mem_clock)
+            hd.getProperty("oc-mem").update(ds.oc_session.applied_oc.mem_clock)
             hd.getProperty("oc-state").update(ds.oc_session.state)
         else:
             hd.getProperty("oc-gpu").update(0)
