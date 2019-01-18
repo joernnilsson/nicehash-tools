@@ -15,6 +15,8 @@ from pprint import pprint
 from time import sleep
 import urllib.error
 import urllib.request
+import paho.mqtt.client as mqtt
+import homie
 
 import nvidia_smi
 import excavator_api
@@ -61,6 +63,13 @@ class Driver:
         self.device_monitor = nvidia_smi.Monitor(data=["xidEvent", "temp"])
         self.excavator_proc = None
         self.ipc = None
+
+        self.mqtt = mqtt.Client("excavator_driver")
+        self.mqtt.on_connect = self.mqtt_connected
+        self.mqtt.on_disconnect = self.mqtt_disconnected
+        self.mqtt.on_message = self.mqtt_message_received
+        self.mqtt_topic_prefix = "miner-01"
+
 
         # dict of device id -> overclocking device object
         self.devices_oc = {}
@@ -337,30 +346,6 @@ class Driver:
         CRASHING = 2
         RESTARTING = 3
 
-
-    def get_device_oc(self, device, algo):  
-        uuid = nvidia_smi.device(device)["uuid"]
-        spec = {
-                "gpu_clock": None,
-                "mem_clock": None,
-                "power": None
-            }
-
-        paths = [
-            [uuid, algo], 
-            [uuid, "default"], 
-            ["default", algo], 
-            ["default", "default"]
-        ]
-
-        for e in spec.keys():
-            for p in paths:
-                if p[0] in self.oc_config and p[1] in self.oc_config[p[0]] and e in self.oc_config[p[0]][p[1]]:
-                    spec[e] = self.oc_config[p[0]][p[1]][e]
-                    break
-
-        return spec
-
     def nicehash_mbtc_algo_per_day(self, algo, speed):
         if not algo:
             return 0.0
@@ -418,6 +403,8 @@ class Driver:
 
         self.ipc.stop()
 
+        self.mqtt.loop_stop()
+
         try:
             self.device_monitor.stop()
         except Exception as e:
@@ -442,6 +429,57 @@ class Driver:
             #self.excavator_proc.kill()
             #self.excavator_proc.wait(timeout=1.0)
 
+    def mqtt_topic(self, path):
+        if not isinstance(path, list):
+            path = [path]
+        return "/".join([self.mqtt_topic_prefix] + path)
+
+
+    def mqtt_publish(self, path, value, retained = False):
+        topic = self.mqtt_topic(path)
+        self.mqtt.publish(topic, str(value), retain=True)
+        logging.debug("publishing to %s: %s", topic, str(value))
+
+    def publish_device(self, device):
+        ds = self.device_settings[device]
+        self.mqtt_publish([ds.uuid, "id"], device)
+        self.mqtt_publish([ds.uuid, "algo"], "" if ds.current_algo is None else ds.current_algo)
+        self.mqtt_publish([ds.uuid, "speed"], ds.current_speed)
+        self.mqtt_publish([ds.uuid, "paying"], ds.paying)
+        self.mqtt_publish([ds.uuid, "enabled"], "true" if ds.enabled else "false")
+
+    def publish_devices(self):
+        for device, ds in self.device_settings.items():          
+            self.publish_device(device)
+
+    def mqtt_connected(self, client, userdata, flags, rc):
+        logging.info("Connected to mqtt server: %s", "NA")
+
+        for ds in self.device_settings.values():
+            self.mqtt.subscribe(self.mqtt_topic([ds.uuid, "action", "enable"]))
+
+    def mqtt_disconnected(self, client, userdata, rc):
+        logging.info("Disconnected from mqtt server")
+
+    def mqtt_message_received(self, client, userdata, message):
+        logging.info("Got message on %s: %s", message.topic, message.payload)
+        parts = message.topic.split("/")
+
+        payload = message.payload.decode("utf-8")
+
+
+        for device, ds in self.device_settings.items():
+
+            if parts[1] == ds.uuid:
+                if parts[2] ==  "action" and parts[3] == "enable":
+                    if payload == "true":
+                        self.device_settings[device].enabled = True
+                    elif payload == "false":
+                        self.device_settings[device].enabled = False
+                    else:
+                        logging.error("Received unrecognized payload on %s: %s", message.topic, payload)
+                break
+
     def run(self):
 
         # Start IPC to receive remote commands
@@ -451,7 +489,14 @@ class Driver:
         # Get gpu info
         for device, ds in self.device_settings.items():
             ds.uuid = nvidia_smi.device(device)["uuid"]
+
+        # Start mqtt client
+        # TODO add parameters and auth
+        self.mqtt.loop_start()
+        self.mqtt.connect("localhost")
         
+        # Publish enabled devices
+        self.mqtt_publish("devices", ",".join(x.uuid for x in self.device_settings.values()), True)
 
         # Start excavator
         if self.run_excavator:
@@ -541,6 +586,8 @@ class Driver:
                             "speed": ds.current_speed,
                             "paying": ds.paying
                         })
+                    
+                self.publish_devices()
 
 
 
@@ -596,6 +643,8 @@ class Driver:
                                 "paying": ds.paying
                             })
 
+                            self.publish_device(device)
+
                             if ds.running:
                                 self.free_device(device)
         
@@ -614,6 +663,8 @@ class Driver:
                                 "speed": ds.current_speed,
                                 "paying": ds.paying
                             })
+                        self.publish_device(device)
+
                         self.free_device(device)
 
 
