@@ -47,7 +47,7 @@ SPEED_INTERVAL = 2
 
 class Driver:
 
-    def __init__(self, wallet, region, benchmarks, devices, name, oc_strat, oc_file, switching_threshold, run_excavator, ipc_port, autostart, db, mqtt_host):
+    def __init__(self, wallet, region, benchmarks, devices, name, oc_strat, oc_file, switching_threshold, run_excavator, ipc_port, autostart, db, mqtt_host, mqtt_name):
 
         self.wallet = wallet
         self.region = region
@@ -67,6 +67,7 @@ class Driver:
 
         # Mqtt
         self.mqtt_host = mqtt_host
+        self.mqtt_name = mqtt_name
 
         # Mqtt homie
         self.homie = None
@@ -78,8 +79,8 @@ class Driver:
                 "USERNAME": "",
                 "PASSWORD": "",
                 "CA_CERTS": "",
-                "DEVICE_NAME": "miner-01",
-                "DEVICE_ID": "miner01",
+                "DEVICE_NAME": mqtt_name,
+                "DEVICE_ID": mqtt_name,
                 "TOPIC": "homie"
             }
             self.homie = homie.Device(homie_config)
@@ -195,6 +196,7 @@ class Driver:
             WARMUP_2 = "warmup_2"
             ACTIVE = "active"
             FINISHING = "finishing"
+
         
         TIME_WARMUP_1 = 2
         TIME_WARMUP_2 = 20
@@ -454,7 +456,7 @@ class Driver:
             #self.excavator_proc.wait(timeout=1.0)
 
     def get_device_settings(self, uuid):
-        return self.device_settings[index(self.device_settings, lambda item: item.uuid == uuid)]
+        return next(x for x in self.device_settings.values() if x.uuid == uuid)
 
     def homie_setup(self):
 
@@ -473,29 +475,46 @@ class Driver:
             node.addProperty("speed", name=name+" Speed", unit="H/s", datatype="float")
             node.addProperty("paying", name=name+" Paying", unit="mBTC/d", datatype="float")
             node.addProperty("enabled", name=name+" Enabled", datatype="boolean").settable(lambda property, value: self.homie_enable_device(ds.uuid, value))
+
+            node.addProperty("oc-gpu", name=name+" Core clock offset", unit="Hz", datatype="integer")
+            node.addProperty("oc-mem", name=name+" Memory clock offset", unit="Hz", datatype="integer")
+            node.addProperty("oc-power", name=name+" Power offset", unit="W", datatype="integer")
+            node.addProperty("oc-state", name=name+" Overclock state", datatype="enum", format="inactive,warmup_1,warmup_2,active,finishing")
+            
             self.homie_devices[ds.uuid] = node
 
         self.homie.setup()
 
-    def homie_enable_device(self, uuid, msg):
+    def homie_enable_device(self, uuid, payload):
         ds = self.get_device_settings(uuid)
-        payload = msg.payload.decode("UTF-8").lower()
-        logging.debug("Got message for %s: %s", uuid, payload)
+        logging.info("Got message for %s: %s", uuid, payload)
         if payload == "true":
             ds.enabled = True
         elif payload == "false":
             ds.enabled = False
         else:
-            logging.error("Received unrecognized payload on %s: %s", msg.topic, payload)
+            logging.error("Received unrecognized payload: %s", payload)
 
     def publish_device(self, device):
         ds = self.device_settings[device]
+        hd = self.homie_devices[ds.uuid]
 
-        self.homie_devices[ds.uuid].getProperty("id").update(device)
-        self.homie_devices[ds.uuid].getProperty("algo").update("" if ds.current_algo is None else ds.current_algo)
-        self.homie_devices[ds.uuid].getProperty("speed").update(ds.current_speed)
-        self.homie_devices[ds.uuid].getProperty("paying").update(ds.paying)
-        self.homie_devices[ds.uuid].getProperty("enabled").update("true" if ds.enabled else "false")
+        hd.getProperty("id").update(device)
+        hd.getProperty("algo").update("" if ds.current_algo is None else ds.current_algo)
+        hd.getProperty("speed").update(ds.current_speed)
+        hd.getProperty("paying").update(ds.paying)
+        hd.getProperty("enabled").update("true" if ds.enabled else "false")
+
+        if(ds.oc_session):
+            hd.getProperty("oc-gpu").update(ds.oc_session.gpu_clock)
+            hd.getProperty("oc-mem").update(ds.oc_session.mem_clock)
+            hd.getProperty("oc-mem").update(ds.oc_session.mem_clock)
+            hd.getProperty("oc-state").update(ds.oc_session.state)
+        else:
+            hd.getProperty("oc-gpu").update(0)
+            hd.getProperty("oc-mem").update(0)
+            hd.getProperty("oc-power").update(0)
+            hd.getProperty("oc-state").update("inactive")
 
     def publish_devices(self):
         for device, ds in self.device_settings.items():          
@@ -714,6 +733,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Excavator client')
 
+
     parser.add_argument("--devices", "-d", help='devices to use (default: all)', default = "all", type=str)
     parser.add_argument("--region", '-r', help='region (default eu)', default = "eu")
     parser.add_argument("--worker", '-w', help='worker name', default = "wr02")
@@ -727,6 +747,7 @@ if __name__ == '__main__':
     parser.add_argument("--autostart", "-m", help='autostart mining', action='store_true')
     parser.add_argument("--db", help='benchmark db directory name')
     parser.add_argument("--mqtt-host", help='mqtt hostname')
+    parser.add_argument("--mqtt-name", help='mqtt name', default="miner-01")
 
     parser.add_argument("--overclock", "-o", help="initial overclocing strategy [file, db_best, db_search]")
     parser.add_argument("--overclock-file", "-f", help="overclocing spec file for file strategy")
@@ -762,7 +783,7 @@ if __name__ == '__main__':
     if args.overclock == "db_search":
         oc_strategy = Driver.DeviceSettings.OcStrategy.DB_SEARCH
 
-    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, oc_strategy, args.overclock_file, args.threshold, args.excavator, args.ipc_port, args.autostart, db, args.mqtt_host)
+    driver = Driver(args.address, args.region, benchmarks, devices, args.worker, oc_strategy, args.overclock_file, args.threshold, args.excavator, args.ipc_port, args.autostart, db, args.mqtt_host, args.mqtt_name)
     signal.signal(signal.SIGINT, sigint_handler)
 
     driver.run()
