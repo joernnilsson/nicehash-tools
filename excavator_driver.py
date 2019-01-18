@@ -177,7 +177,7 @@ class Driver:
             ACTIVE = "active"
             FINISHING = "finishing"
         
-        TIME_WARMUP_1 = 10
+        TIME_WARMUP_1 = 2
         TIME_WARMUP_2 = 20
         BENCHMARK_MIN_LENGTH = 100
 
