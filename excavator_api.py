@@ -66,6 +66,9 @@ class ExcavatorApi:
     def stop(self):
         self.do_excavator_command('miner.stop')
 
+    def quit(self):
+        self.do_excavator_command('quit')
+
     def device_speeds(self, device):
         res = self.do_excavator_command('worker.list')
         for w in res["workers"]:
