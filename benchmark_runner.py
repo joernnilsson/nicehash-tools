@@ -14,18 +14,18 @@ import nvidia_smi
 
 algorithms = [
     "equihash",
-    "pascal",
     "decred",
     "blake2s",
     "daggerhashimoto",
     "lyra2rev2",
     "daggerhashimoto_decred",
-    "daggerhashimoto_pascal",
     "keccak",
     "neoscrypt",
     "cryptonightV7",
     "lyra2z",
-    "x16r"
+    "x16r",
+    "cryptonightV8"
+    #"skunk"
     ]
 
 
