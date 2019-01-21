@@ -198,7 +198,7 @@ class Driver:
             FINISHING = "finishing"
 
         
-        TIME_WARMUP_1 = 2
+        TIME_WARMUP_1 = 10
         TIME_WARMUP_2 = 20
         BENCHMARK_MIN_LENGTH = 100
 
@@ -475,7 +475,7 @@ class Driver:
             node.addProperty("algo", name=name+" Algorithm", datatype="string")
             node.addProperty("speed", name=name+" Speed", unit="H/s", datatype="float")
             node.addProperty("paying", name=name+" Paying", unit="mBTC/d", datatype="float")
-            node.addProperty("enabled", name=name+" Enabled", datatype="boolean").settable(lambda property, value: self.homie_enable_device(ds.uuid, value))
+            node.addProperty("enabled", name=name+" Enabled", datatype="boolean").settable(self.homie_gen_lambda(ds.uuid))
 
             node.addProperty("oc-gpu", name=name+" Core clock offset", unit="Hz", datatype="integer")
             node.addProperty("oc-mem", name=name+" Memory clock offset", unit="Hz", datatype="integer")
@@ -485,6 +485,9 @@ class Driver:
             self.homie_devices[ds.uuid] = node
 
         self.homie.setup()
+
+    def homie_gen_lambda(self, uuid):
+        return lambda prop, value: self.homie_enable_device(uuid, value)
 
     def homie_enable_device(self, uuid, payload):
         ds = self.get_device_settings(uuid)
