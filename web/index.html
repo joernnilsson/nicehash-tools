@@ -45,7 +45,13 @@
 
       let connect =  () => {
         console.log("connecting");
-        ws = new WebSocket("ws://"+address+"/miner-monitor/ws");
+	let protocol = "";
+	if (window.location.protocol === "https:") {
+	    protocol = "wss:";
+	} else {
+	    protocol = "ws:";
+	}
+        ws = new WebSocket(protocol+"//"+address+"/miner-monitor/ws");
       
 
         // Set event handlers.
