@@ -67,7 +67,7 @@ class ExcavatorApi:
         self.do_excavator_command('miner.stop')
 
     def quit(self):
-        self.do_excavator_command('quit')
+        self.do_excavator_command('quit', expect_response=False)
 
     def device_speeds(self, device):
         res = self.do_excavator_command('worker.list')
@@ -108,7 +108,7 @@ class ExcavatorApi:
     def get_stratum(self, region):
         return 'nhmp.%s.nicehash.com:%s' % (region, 3200)
 
-    def do_excavator_command(self, method, params = []):
+    def do_excavator_command(self, method, params = [], expect_response=True):
         """Sends a command to excavator, returns the JSON-encoded response.
 
         method -- name of the command to execute
@@ -124,22 +124,25 @@ class ExcavatorApi:
         s = socket.create_connection(self.address, EXCAVATOR_TIMEOUT)
         
         s.sendall((json.dumps(command).replace('\n', '\\n') + '\n').encode())
-        response = ''
-        while True:
-            chunk = s.recv(BUF_SIZE).decode()
-            
-            if '\n' in chunk:
-                response += chunk[:chunk.index('\n')]
-                break
-            else:
-                response += chunk
-        s.close()
+        
+        if expect_response:
 
-        response_data = json.loads(response)
-        if "error" not in response_data or response_data['error'] is None:
-            return response_data
-        else:
-            raise ExcavatorApiError(response_data)
+            response = ''
+            while True:
+                chunk = s.recv(BUF_SIZE).decode()
+                
+                if '\n' in chunk:
+                    response += chunk[:chunk.index('\n')]
+                    break
+                else:
+                    response += chunk
+            s.close()
+
+            response_data = json.loads(response)
+            if "error" not in response_data or response_data['error'] is None:
+                return response_data
+            else:
+                raise ExcavatorApiError(response_data)
 
 
 if __name__ == '__main__':
