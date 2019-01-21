@@ -6,6 +6,7 @@ import tempfile
 import subprocess
 
 import excavator_benchmark
+import excavator_api
 import overclock
 import overclock_session
 import benchmark_db
@@ -143,7 +144,7 @@ if(__name__ == "__main__"):
                 raise Exception("Multi algo not supported by BenchmarkDb")
 
             # TODO read miner and version
-            db.save(t.algo, t.dev_uuid, "excavator", "1.5.11", t.result[0], t.dev_power, t.dev_clock, t.dev_mem, True, t.benchmark_length)
+            db.save(t.algo, t.dev_uuid, "excavator", "1.5.14a", t.result[0], t.dev_power, t.dev_clock, t.dev_mem, True, t.benchmark_length)
 
     if(args.csv):
         with open(args.csv, "w") as f:
