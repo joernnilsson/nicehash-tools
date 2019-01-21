@@ -187,4 +187,4 @@ if(__name__ == "__main__"):
     if(args.clock != None):
         dev.set_clock_offset(args.clock)
 
-    #print(str(dev.get_clock_offset()))
+    print(str(dev.get_clock_offset()))

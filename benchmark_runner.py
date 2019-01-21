@@ -10,6 +10,7 @@ import excavator_api
 import overclock
 import overclock_session
 import benchmark_db
+import nvidia_smi
 
 algorithms = [
     "equihash",
@@ -28,7 +29,7 @@ algorithms = [
     ]
 
 
-def generate_tasks(executable, device, algos, benchmark_length, clock_range, power_range, mem_range):
+def generate_tasks_oc_range(device, algos, benchmark_length, clock_range, power_range, mem_range):
 
     tasks = []
     for a in algos:
@@ -36,6 +37,16 @@ def generate_tasks(executable, device, algos, benchmark_length, clock_range, pow
             for c in clock_range:
                 for m in mem_range:
                     tasks.append(excavator_benchmark.Benchmark(device, a, benchmark_length, overclock_session.OcSpec(c, m, p)))
+    
+    return tasks
+
+def generate_tasks_oc_file(device, algos, benchmark_length, file):
+
+    tasks = []
+    uuid = nvidia_smi.device(device)["uuid"]
+    for a in algos:
+        os = overclock_session.OcStrategyFile(uuid, a, file)
+        tasks.append(excavator_benchmark.Benchmark(device, a, benchmark_length, os.get_spec()))
     
     return tasks
 
@@ -101,9 +112,13 @@ if(__name__ == "__main__"):
     parser.add_argument("--length", '-l', help='length [s] (default: 100)', default = 100, type=int)
     parser.add_argument("--excavator-path", '-e', help='path to excavator executable (default: excavator)', default="excavator")
 
+    parser.add_argument("--overclock-file", "-f", help="overclocing spec file for file strategy")
+
     parser.add_argument("--clock-range", '-c', help='gpu clock offset value/range, example: [-50:10:150]')
     parser.add_argument("--mem-range", '-m', help='memory clock offset value/range, example: [200:10:300]')
     parser.add_argument("--power-range", '-p', help='power limit value/range, example: [200:10:300]')
+
+
 
     parser.add_argument("--csv", '-s', help='output comma separated data file')
     parser.add_argument("--json", '-j', help='output json file suitable for excavator driver')
@@ -111,13 +126,20 @@ if(__name__ == "__main__"):
 
     args = parser.parse_args()
 
+    if args.overclock_file and (args.clock_range or args.power_range or args.mem_range):
+        logger.error("Cannot specify boh overlocking file and range")
+        sys.exit(0)
+
     clock_range = parse_range(args.clock_range) if args.clock_range != None else [None]
     power_range = parse_range(args.power_range) if args.power_range != None else [None]
     mem_range = parse_range(args.mem_range) if args.mem_range != None else [None]
 
     algos = algorithms if args.algorithms == "all" else args.algorithms.split(",")
 
-    tasks = generate_tasks(args.excavator_path, args.device, algos, args.length, clock_range, power_range, mem_range)
+    if args.overclock_file:
+        tasks = generate_tasks_oc_file(args.device, algos, args.length, args.overclock_file)
+    else:
+        tasks = generate_tasks_oc_range(args.device, algos, args.length, clock_range, power_range, mem_range)
 
     logger.info("Running %d bechmarks, with estimated total execution time: %.1f min", len(tasks), float(len(tasks) * (args.length+4))/ 60.0)
 

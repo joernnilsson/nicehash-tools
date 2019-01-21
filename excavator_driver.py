@@ -274,7 +274,7 @@ class Driver:
                 logging.debug("Saving benchmark result: %s", str(self.benchmark_result))
                 self.database.save(self.strategy.algo, 
                     self.strategy.device_uuid, 
-                    "excavator", "1.5.11", 
+                    "excavator", "1.5.14a", 
                     self.benchmark_result["avg_full"], 
                     dev_power, 
                     dev_clock, 
@@ -287,6 +287,7 @@ class Driver:
             self.reset_overclock()
 
         def get_speeds(self):
+            # TODO ERROR!
             return self.benchmark_result["length"] > 10
 
         def loop_active(self, current_speed):
