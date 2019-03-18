@@ -9,6 +9,7 @@
 
 
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" integrity="sha384-WskhaSGFgHYWDcbwN70/dfYBj47jz9qbsMId/iRN3ewGhXQFZCSftd1LZCfmhktB" crossorigin="anonymous">
 
   <style>
@@ -19,6 +20,7 @@
   <script type="text/javascript">
 
     var ws;
+    var mqtt
     var svg;
     var gpuMap = {};
     var paramAlias = {};
@@ -35,8 +37,125 @@
       }
     }
 
+    function setupGpus(gpus){
+
+      // Add DOM
+      for (uuid of gpus) {
+      
+        let selector = "#device_table .device_row[device='"+uuid+"']";
+                
+        if(!document.querySelector(selector)){
+          let t = document.querySelector('#device_table_row');
+          let el = document.importNode(t.content, true);
+          el.firstElementChild.setAttribute("device", uuid);
+          el.querySelector(".temperature").classList.add("t_gpu."+uuid);
+          el.querySelector(".uuid").innerHTML = uuid;
+          el.querySelectorAll("button").forEach(e => e.setAttribute("device", uuid))
+          document.querySelector('#device_table tbody').appendChild(el);
+
+
+          mqtt.subscribe("homie/miner-01/"+uuid+"/algo");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/speed");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/temperature");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/paying");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/enabled");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/oc-state");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/oc-power");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/oc-gpu");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/oc-mem");
+          mqtt.subscribe("homie/miner-01/"+uuid+"/id");
+
+        } else {
+          return;
+        }
+      }
+    }
+
+    function formatValue(type, value){
+      switch(type){
+        case "speed":
+          return hashrate(parseFloat(value));
+        case "paying":
+          return parseFloat(value).toFixed(3) + " mBTC/d";
+        default:
+          return value;
+      }
+    }
+
+    function setGpuValue(gpu, name, value){
+      let selector = "#device_table .device_row[device='"+gpu+"'] ."+name;
+      let el = document.querySelector(selector)
+
+      if(el){
+        el.innerHTML = formatValue(name, value);
+      }
+
+      if(name == "temperature"){
+        let sel = svg.getElementsByClassName("t_gpu."+gpu);
+        if(sel.length > 0){
+          sel[0].innerText = formatValue(name, value);
+        }
+      }
+    }
+
+
 
     function init() {
+
+      // Connect to mqtt server
+      mqtt = new Paho.MQTT.Client("wss://sf.while1.no/mqtt/ws", "web");
+
+      // called when the client connects
+      let mqttOnConnect = () => {
+        // Once a connection has been made, make a subscription and send a message.
+        console.log("MQTT Connected");
+        mqtt.subscribe("homie/miner-01/$nodes");
+      }
+
+      // called when the client loses its connection
+      let mqttOnConnectionLost = (responseObject) => {
+        if (responseObject.errorCode !== 0) {
+          console.log("onConnectionLost:"+responseObject.errorMessage);
+        }
+      }
+
+      // called when a message arrives
+      let mqttOnMessageArrived = (message) => {
+        payload = message.payloadString;
+        console.log(message.destinationName);
+        switch(message.destinationName){
+
+          case "homie/miner-01/$nodes":
+            let gpus = payload.split(",").filter(s => s.match("^gpu-"));
+            setupGpus(gpus);
+            break;
+
+
+          default:
+            let path = message.destinationName.split("/");
+            if(path[2].match(/^gpu-/)){
+              setGpuValue(path[2], path[3], payload);
+            }
+        }
+      }
+
+      // set callback handlers
+      mqtt.onConnectionLost = mqttOnConnectionLost;
+      mqtt.onMessageArrived = mqttOnMessageArrived;
+      //mqtt.onConnected = mqttOnConnect;
+
+      mqtt.connect({
+        //reconnect: true
+        useSSL: true,
+        onSuccess: mqttOnConnect,
+        onFailure: () => {console.log("FAILURE");},
+      });
+
+
+
+      return;
+
+
       // Connect to Web Socket
       address = window.location.hostname == "localhost" ? "localhost:9090" : window.location.hostname;
       address = "sf.while1.no";
@@ -178,8 +297,9 @@
         for (let e of doc.querySelectorAll("span, div")){
           if(e.innerHTML == e.innerText){
             console.log(e.innerText);
-            e.setAttribute("class", e.innerText);
-
+            e.setAttribute("class", e.innerText.toLowerCase());
+            if(e.innerText.toLowerCase().match(/^t_/))
+              e.innerText = "-";
           }
         }
         
@@ -210,13 +330,13 @@
 
   <template id="device_table_row">
     <tr class="device_row" device="99">
-      <th class="device_id">Id</th>
+      <th class="id">Id</th>
       <td class="algo">Algorithm</td>
       <td class="speed">Algorithm</td>
       <td class="paying">Algorithm</td>
-      <td class="device_temperature">0.0</td>
+      <td class="temperature">0.0</td>
       <td><button class="device-enable" device="99" value="1">Enable</button> <button class="device-enable" device="99" value="0">Disable</button></td>
-      <td class="device_uuid">uuid</td>
+      <td class="uuid">uuid</td>
     </tr>
   </template>
 
