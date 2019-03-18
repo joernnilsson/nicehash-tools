@@ -75,7 +75,7 @@ class Driver:
             homie_config = {
                 "HOST": mqtt_host,
                 "PORT": 1883,
-                "KEEPALIVE": 10,
+                "KEEPALIVE": 60,
                 "USERNAME": "",
                 "PASSWORD": "",
                 "CA_CERTS": "",
@@ -84,8 +84,8 @@ class Driver:
                 "TOPIC": "homie"
             }
             self.homie = homie.Device(homie_config)
-            logger.debug("a")
             self.homie_cooling = self.homie.addNode("cooing", "Cooling system", "temperature")
+            self.homie_mining = self.homie.addNode("mining", "Mining system", "stats")
             self.homie_devices = {}
 
 
@@ -128,6 +128,7 @@ class Driver:
             self.paying = 0.0
             self.uuid = ""
             self.running = False
+            self.temperature = 0.0
 
             self.oc_strategy = self.OcStrategy.NONE
             self.oc_session = None
@@ -508,11 +509,17 @@ class Driver:
         hd.getProperty("speed").update(ds.current_speed)
         hd.getProperty("paying").update(ds.paying)
         hd.getProperty("enabled").update("true" if ds.enabled else "false")
+        hd.getProperty("temperature").update(ds.temperature)
+
+        def zero_if_none(val):
+            if val == None:
+                return 0
+            return val
 
         if(ds.oc_session):
-            hd.getProperty("oc-gpu").update(ds.oc_session.applied_oc.gpu_clock)
-            hd.getProperty("oc-mem").update(ds.oc_session.applied_oc.mem_clock)
-            hd.getProperty("oc-mem").update(ds.oc_session.applied_oc.mem_clock)
+            hd.getProperty("oc-gpu").update(zero_if_none(ds.oc_session.applied_oc.gpu_clock))
+            hd.getProperty("oc-mem").update(zero_if_none(ds.oc_session.applied_oc.mem_clock))
+            hd.getProperty("oc-mem").update(zero_if_none(ds.oc_session.applied_oc.mem_clock))
             hd.getProperty("oc-state").update(ds.oc_session.state)
         else:
             hd.getProperty("oc-gpu").update(0)
@@ -572,6 +579,8 @@ class Driver:
                         self.state = Driver.State.RESTARTING
                     else:
                         logging.error("Gpu %i: unhandled error (xid: %i)" % (event["id"], event["value"]))
+                elif event["type"] == "temp":
+                    self.device_settings[event["id"]].temperature = event["value"]
 
             except self.device_monitor.Empty:
                 pass
